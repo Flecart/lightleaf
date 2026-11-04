@@ -1,5 +1,8 @@
 # 🍃 Lightleaf
 
+[![CI](https://github.com/Flecart/lightleaf/actions/workflows/ci.yml/badge.svg)](https://github.com/Flecart/lightleaf/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 **A fast, lightweight, self-hosted collaborative LaTeX & Typst editor — with real git integration.**
 
 Lightleaf gives you the Overleaf-style workflow (file tree · editor · live PDF preview · real-time
@@ -9,10 +12,10 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 | | Overleaf CE | Lightleaf |
 |---|---|---|
 | Services to run | Node services + MongoDB + Redis | **one binary** (+ git + your TeX/Typst) |
-| Idle RAM | ~1–2 GB | **~30 MB** |
-| Git clone / push | Premium feature | ✅ built in |
+| Idle RAM | ~1–2 GB | **~30–50 MB** |
+| Git clone / push | Server Pro only | ✅ built in |
 | Typst | ❌ | ✅ |
-| GitHub/GitLab sync | Premium | ✅ (any https remote) |
+| GitHub/GitLab sync | Server Pro only | ✅ (any https remote) |
 
 ## Features
 
@@ -38,7 +41,7 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 ### Docker (recommended)
 
 ```bash
-git clone <this repo> lightleaf && cd lightleaf
+git clone https://github.com/Flecart/lightleaf && cd lightleaf
 cp .env.example .env              # adjust settings
 docker compose up -d --build      # → http://localhost:8080
 ```
@@ -54,8 +57,8 @@ docker compose --profile https up -d --build
 
 This starts a bundled Caddy proxy on ports 80/443 that fetches Let's Encrypt certificates and proxies WebSockets.
 
-**What the image contains:** Lightleaf, git, Typst, and TeX Live (recommended + extra + science + fonts + XeLaTeX/LuaLaTeX + biber + latexmk).
-The default image is about 2 GB. Add `texlive-fonts-extra` to `TEX_PACKAGES` if you need the big font collection.
+**What the image contains:** Lightleaf, git, Typst, and TeX Live (recommended + extra + science + recommended fonts + XeLaTeX/LuaLaTeX + biber + latexmk).
+The default image is about 1.5 GB. Add `texlive-fonts-extra` to `TEX_PACKAGES` if you need the big font collection.
 For a much smaller image, pick fewer TeX packages:
 
 ```bash
@@ -162,6 +165,7 @@ src/
   auth.rs       users, sessions, tokens    compile.rs  LaTeX/Typst, log parsing, SyncTeX
   projects.rs   projects, sharing, chat    git.rs      smart HTTP, history, remotes
   files.rs      file tree, upload, zip     assets.rs   embedded frontend
+  overleaf.rs   Overleaf zip import/export, main-file & engine detection
 frontend/src/
   editor/       EditorPage, CodeEditor, PdfViewer, FileTree, Panels, socket (Yjs client), lang
   pages/        dashboard, auth, settings, admin
@@ -186,6 +190,10 @@ cargo test
 ## Roadmap ideas
 
 Track changes & comments · rich-text mode · link sharing · OIDC/LDAP login · per-project compile images · Typst live preview (incremental) · word count · vim/emacs keybindings.
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please report security problems privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -37,18 +37,32 @@ impl Config {
                 Some("closed") | Some("false") | Some("0") => Signup::Closed,
                 _ => Signup::Open,
             },
-            compile_timeout_secs: env("LIGHTLEAF_COMPILE_TIMEOUT").and_then(|v| v.parse().ok()).unwrap_or(90),
+            compile_timeout_secs: env("LIGHTLEAF_COMPILE_TIMEOUT")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(90),
             max_concurrent_compiles: env("LIGHTLEAF_MAX_COMPILES")
                 .and_then(|v| v.parse().ok())
-                .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().clamp(1, 4)).unwrap_or(2)),
+                .unwrap_or_else(|| {
+                    std::thread::available_parallelism()
+                        .map(|n| n.get().clamp(1, 4))
+                        .unwrap_or(2)
+                }),
             compile_wrapper: env("LIGHTLEAF_COMPILE_WRAPPER")
                 .map(|v| v.split_whitespace().map(String::from).collect())
                 .unwrap_or_default(),
-            max_upload_bytes: env("LIGHTLEAF_MAX_UPLOAD_MB").and_then(|v| v.parse::<usize>().ok()).unwrap_or(50)
+            max_upload_bytes: env("LIGHTLEAF_MAX_UPLOAD_MB")
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(50)
                 * 1024
                 * 1024,
-            secure_cookies: matches!(env("LIGHTLEAF_SECURE_COOKIES").as_deref(), Some("1") | Some("true")),
-            bootstrap_admin: match (env("LIGHTLEAF_ADMIN_EMAIL"), env("LIGHTLEAF_ADMIN_PASSWORD")) {
+            secure_cookies: matches!(
+                env("LIGHTLEAF_SECURE_COOKIES").as_deref(),
+                Some("1") | Some("true")
+            ),
+            bootstrap_admin: match (
+                env("LIGHTLEAF_ADMIN_EMAIL"),
+                env("LIGHTLEAF_ADMIN_PASSWORD"),
+            ) {
                 (Some(e), Some(p)) => Some((e, p)),
                 _ => None,
             },

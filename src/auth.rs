@@ -31,20 +31,31 @@ pub struct User {
 }
 
 fn row_to_user(r: &rusqlite::Row) -> rusqlite::Result<User> {
-    Ok(User { id: r.get(0)?, email: r.get(1)?, name: r.get(2)?, is_admin: r.get::<_, i64>(3)? != 0 })
-}
-
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).find_map(|v| {
-        v.split(';').find_map(|kv| {
-            let (k, val) = kv.trim().split_once('=')?;
-            (k == name).then(|| val.to_string())
-        })
+    Ok(User {
+        id: r.get(0)?,
+        email: r.get(1)?,
+        name: r.get(2)?,
+        is_admin: r.get::<_, i64>(3)? != 0,
     })
 }
 
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(|v| {
+            v.split(';').find_map(|kv| {
+                let (k, val) = kv.trim().split_once('=')?;
+                (k == name).then(|| val.to_string())
+            })
+        })
+}
+
 pub async fn user_from_session(state: &AppState, headers: &HeaderMap) -> AppResult<Option<User>> {
-    let Some(token) = cookie_value(headers, SESSION_COOKIE) else { return Ok(None) };
+    let Some(token) = cookie_value(headers, SESSION_COOKIE) else {
+        return Ok(None);
+    };
     let hash = sha256_hex(&token);
     state
         .db(move |c| {
@@ -62,11 +73,22 @@ pub async fn user_from_session(state: &AppState, headers: &HeaderMap) -> AppResu
 /// Authenticates git clients via HTTP Basic auth: any username + a personal access token
 /// as the password (like Overleaf's git bridge).
 pub async fn user_from_basic(state: &AppState, headers: &HeaderMap) -> AppResult<Option<User>> {
-    let Some(v) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) else { return Ok(None) };
-    let Some(b64) = v.strip_prefix("Basic ") else { return Ok(None) };
-    let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) else { return Ok(None) };
+    let Some(v) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return Ok(None);
+    };
+    let Some(b64) = v.strip_prefix("Basic ") else {
+        return Ok(None);
+    };
+    let Ok(raw) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) else {
+        return Ok(None);
+    };
     let raw = String::from_utf8_lossy(&raw).to_string();
-    let Some((_user, secret)) = raw.split_once(':') else { return Ok(None) };
+    let Some((_user, secret)) = raw.split_once(':') else {
+        return Ok(None);
+    };
     let hash = sha256_hex(secret);
     state
         .db(move |c| {
@@ -88,8 +110,13 @@ pub async fn user_from_basic(state: &AppState, headers: &HeaderMap) -> AppResult
 
 impl FromRequestParts<SharedState> for User {
     type Rejection = AppError;
-    async fn from_request_parts(parts: &mut Parts, state: &SharedState) -> Result<Self, Self::Rejection> {
-        user_from_session(state, &parts.headers).await?.ok_or_else(AppError::unauthorized)
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &SharedState,
+    ) -> Result<Self, Self::Rejection> {
+        user_from_session(state, &parts.headers)
+            .await?
+            .ok_or_else(AppError::unauthorized)
     }
 }
 
@@ -107,7 +134,9 @@ async fn hash_password(pw: String) -> AppResult<String> {
 
 async fn verify_password(pw: String, hash: String) -> bool {
     tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash).map(|h| Argon2::default().verify_password(pw.as_bytes(), &h).is_ok()).unwrap_or(false)
+        PasswordHash::new(&hash)
+            .map(|h| Argon2::default().verify_password(pw.as_bytes(), &h).is_ok())
+            .unwrap_or(false)
     })
     .await
     .unwrap_or(false)
@@ -126,7 +155,13 @@ fn validate_new_account(email: &str, name: &str, password: &str) -> AppResult<()
     Ok(())
 }
 
-async fn insert_user(state: &AppState, email: &str, name: &str, password: &str, admin: Option<bool>) -> AppResult<i64> {
+async fn insert_user(
+    state: &AppState,
+    email: &str,
+    name: &str,
+    password: &str,
+    admin: Option<bool>,
+) -> AppResult<i64> {
     validate_new_account(email, name, password)?;
     let hash = hash_password(password.to_string()).await?;
     let (email, name) = (email.trim().to_string(), name.trim().to_string());
@@ -152,12 +187,18 @@ async fn insert_user(state: &AppState, email: &str, name: &str, password: &str, 
 pub async fn bootstrap_admin(state: &AppState, email: &str, password: &str) -> anyhow::Result<()> {
     let e = email.to_string();
     let exists: bool = state
-        .db(move |c| c.query_row("SELECT COUNT(*) FROM users WHERE email = ?1", [e], |r| r.get::<_, i64>(0)))
+        .db(move |c| {
+            c.query_row("SELECT COUNT(*) FROM users WHERE email = ?1", [e], |r| {
+                r.get::<_, i64>(0)
+            })
+        })
         .await
         .map_err(|e| anyhow::anyhow!(e.1))?
         > 0;
     if !exists {
-        insert_user(state, email, "Admin", password, Some(true)).await.map_err(|e| anyhow::anyhow!(e.1))?;
+        insert_user(state, email, "Admin", password, Some(true))
+            .await
+            .map_err(|e| anyhow::anyhow!(e.1))?;
         tracing::info!("created bootstrap admin {email}");
     }
     Ok(())
@@ -170,23 +211,33 @@ async fn start_session(state: &AppState, user_id: i64) -> AppResult<Response> {
     state
         .db(move |c| {
             c.execute("DELETE FROM sessions WHERE expires_at < ?1", [now()])?;
-            c.execute("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?1, ?2, ?3)", params![
-                hash, user_id, expires
-            ])
+            c.execute(
+                "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?1, ?2, ?3)",
+                params![hash, user_id, expires],
+            )
         })
         .await?;
-    let secure = if state.cfg.secure_cookies { "; Secure" } else { "" };
+    let secure = if state.cfg.secure_cookies {
+        "; Secure"
+    } else {
+        ""
+    };
     let cookie = format!(
         "{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}{secure}",
         SESSION_DAYS * 86400
     );
     let mut res = Json(json!({ "ok": true })).into_response();
-    res.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).map_err(anyhow::Error::from)?);
+    res.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(anyhow::Error::from)?,
+    );
     Ok(res)
 }
 
 pub async fn public_config(State(state): State<SharedState>) -> AppResult<Json<serde_json::Value>> {
-    let users: i64 = state.db(|c| c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))).await?;
+    let users: i64 = state
+        .db(|c| c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0)))
+        .await?;
     let compilers = crate::compile::available_compilers();
     Ok(Json(json!({
         "siteName": state.cfg.site_name,
@@ -203,8 +254,13 @@ pub struct RegisterReq {
     password: String,
 }
 
-pub async fn register(State(state): State<SharedState>, Json(req): Json<RegisterReq>) -> AppResult<Response> {
-    let users: i64 = state.db(|c| c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))).await?;
+pub async fn register(
+    State(state): State<SharedState>,
+    Json(req): Json<RegisterReq>,
+) -> AppResult<Response> {
+    let users: i64 = state
+        .db(|c| c.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0)))
+        .await?;
     if state.cfg.signup == Signup::Closed && users > 0 {
         return Err(AppError::forbidden());
     }
@@ -218,26 +274,38 @@ pub struct LoginReq {
     password: String,
 }
 
-pub async fn login(State(state): State<SharedState>, Json(req): Json<LoginReq>) -> AppResult<Response> {
+pub async fn login(
+    State(state): State<SharedState>,
+    Json(req): Json<LoginReq>,
+) -> AppResult<Response> {
     let email = req.email.trim().to_string();
     let row: Option<(i64, String)> = state
         .db(move |c| {
-            c.query_row("SELECT id, password_hash FROM users WHERE email = ?1", [email], |r| Ok((r.get(0)?, r.get(1)?)))
-                .optional()
+            c.query_row(
+                "SELECT id, password_hash FROM users WHERE email = ?1",
+                [email],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
         })
         .await?;
-    if let Some((id, hash)) = row {
-        if verify_password(req.password, hash).await {
-            return start_session(&state, id).await;
-        }
+    if let Some((id, hash)) = row
+        && verify_password(req.password, hash).await
+    {
+        return start_session(&state, id).await;
     }
-    Err(AppError(axum::http::StatusCode::UNAUTHORIZED, "invalid email or password".into()))
+    Err(AppError(
+        axum::http::StatusCode::UNAUTHORIZED,
+        "invalid email or password".into(),
+    ))
 }
 
 pub async fn logout(State(state): State<SharedState>, headers: HeaderMap) -> AppResult<Response> {
     if let Some(token) = cookie_value(&headers, SESSION_COOKIE) {
         let hash = sha256_hex(&token);
-        state.db(move |c| c.execute("DELETE FROM sessions WHERE token_hash = ?1", [hash])).await?;
+        state
+            .db(move |c| c.execute("DELETE FROM sessions WHERE token_hash = ?1", [hash]))
+            .await?;
     }
     let mut res = Json(json!({ "ok": true })).into_response();
     res.headers_mut().insert(
@@ -266,19 +334,34 @@ pub async fn change_password(
         return Err(AppError::bad("password must be at least 8 characters"));
     }
     let uid = user.id;
-    let hash: String =
-        state.db(move |c| c.query_row("SELECT password_hash FROM users WHERE id = ?1", [uid], |r| r.get(0))).await?;
+    let hash: String = state
+        .db(move |c| {
+            c.query_row(
+                "SELECT password_hash FROM users WHERE id = ?1",
+                [uid],
+                |r| r.get(0),
+            )
+        })
+        .await?;
     if !verify_password(req.current, hash).await {
         return Err(AppError::bad("current password is wrong"));
     }
     let new_hash = hash_password(req.new).await?;
     state
-        .db(move |c| c.execute("UPDATE users SET password_hash = ?2 WHERE id = ?1", params![uid, new_hash]))
+        .db(move |c| {
+            c.execute(
+                "UPDATE users SET password_hash = ?2 WHERE id = ?1",
+                params![uid, new_hash],
+            )
+        })
         .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
-pub async fn list_tokens(State(state): State<SharedState>, user: User) -> AppResult<Json<serde_json::Value>> {
+pub async fn list_tokens(
+    State(state): State<SharedState>,
+    user: User,
+) -> AppResult<Json<serde_json::Value>> {
     let rows = state
         .db(move |c| {
             let mut st = c.prepare("SELECT id, name, created_at, last_used FROM tokens WHERE user_id = ?1 ORDER BY id")?;
@@ -305,7 +388,11 @@ pub async fn create_token(
 ) -> AppResult<Json<serde_json::Value>> {
     let token = format!("llt_{}", random_token(20));
     let hash = sha256_hex(&token);
-    let name = if req.name.trim().is_empty() { "git".to_string() } else { req.name.trim().chars().take(60).collect() };
+    let name = if req.name.trim().is_empty() {
+        "git".to_string()
+    } else {
+        req.name.trim().chars().take(60).collect()
+    };
     let id = state
         .db(move |c| {
             c.execute("INSERT INTO tokens (user_id, name, token_hash, created_at) VALUES (?1, ?2, ?3, ?4)", params![
@@ -325,15 +412,29 @@ pub async fn delete_token(
     user: User,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    state.db(move |c| c.execute("DELETE FROM tokens WHERE id = ?1 AND user_id = ?2", params![id, user.id])).await?;
+    state
+        .db(move |c| {
+            c.execute(
+                "DELETE FROM tokens WHERE id = ?1 AND user_id = ?2",
+                params![id, user.id],
+            )
+        })
+        .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
 fn require_admin(user: &User) -> AppResult<()> {
-    if user.is_admin { Ok(()) } else { Err(AppError::forbidden()) }
+    if user.is_admin {
+        Ok(())
+    } else {
+        Err(AppError::forbidden())
+    }
 }
 
-pub async fn admin_list_users(State(state): State<SharedState>, user: User) -> AppResult<Json<serde_json::Value>> {
+pub async fn admin_list_users(
+    State(state): State<SharedState>,
+    user: User,
+) -> AppResult<Json<serde_json::Value>> {
     require_admin(&user)?;
     let rows = state
         .db(|c| {
@@ -368,7 +469,14 @@ pub async fn admin_create_user(
     Json(req): Json<AdminCreateReq>,
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&user)?;
-    let id = insert_user(&state, &req.email, &req.name, &req.password, Some(req.is_admin)).await?;
+    let id = insert_user(
+        &state,
+        &req.email,
+        &req.name,
+        &req.password,
+        Some(req.is_admin),
+    )
+    .await?;
     Ok(Json(json!({ "id": id })))
 }
 
@@ -384,7 +492,9 @@ pub async fn admin_delete_user(
     let owned: Vec<String> = state
         .db(move |c| {
             let mut st = c.prepare("SELECT id FROM projects WHERE owner_id = ?1")?;
-            let v = st.query_map([id], |r| r.get(0))?.collect::<Result<Vec<String>, _>>()?;
+            let v = st
+                .query_map([id], |r| r.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
             c.execute("DELETE FROM users WHERE id = ?1", [id])?;
             Ok(v)
         })

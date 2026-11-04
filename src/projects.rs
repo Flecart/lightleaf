@@ -3,8 +3,8 @@ use crate::{
     collab::flush_project,
     compile::is_known_compiler,
     error::{AppError, AppResult},
-    overleaf::{choose_compiler, detect, import_zip as import_zip_file},
     git::{commit_all, init_repo},
+    overleaf::{choose_compiler, detect, import_zip as import_zip_file},
     state::{Role, SharedState},
     util::{clean_rel_path, now},
 };
@@ -57,7 +57,8 @@ Welcome to Lightleaf! Edit this file and press *Recompile* (Ctrl+S) to update th
 $ e^(i pi) + 1 = 0 $
 "#;
 
-pub const GITIGNORE: &str = "*.aux\n*.log\n*.out\n*.synctex.gz\n*.fdb_latexmk\n*.fls\n*.bbl\n*.blg\n*.toc\n";
+pub const GITIGNORE: &str =
+    "*.aux\n*.log\n*.out\n*.synctex.gz\n*.fdb_latexmk\n*.fls\n*.bbl\n*.blg\n*.toc\n";
 
 fn project_json(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     Ok(json!({
@@ -72,7 +73,8 @@ fn project_json(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     }))
 }
 
-const PROJECT_SELECT: &str = "SELECT p.id, p.name, p.compiler, p.main_file, p.created_at, p.updated_at,
+const PROJECT_SELECT: &str =
+    "SELECT p.id, p.name, p.compiler, p.main_file, p.created_at, p.updated_at,
         u.id, u.name, u.email, CASE WHEN p.owner_id = ?1 THEN 'owner' ELSE m.role END
      FROM projects p JOIN users u ON u.id = p.owner_id
      LEFT JOIN members m ON m.project_id = p.id AND m.user_id = ?1";
@@ -89,9 +91,21 @@ pub async fn list(State(state): State<SharedState>, user: User) -> AppResult<Jso
     Ok(Json(json!(rows)))
 }
 
-async fn insert_project(state: &SharedState, user: &User, name: &str, compiler: &str, main: &str) -> AppResult<String> {
+async fn insert_project(
+    state: &SharedState,
+    user: &User,
+    name: &str,
+    compiler: &str,
+    main: &str,
+) -> AppResult<String> {
     let id = uuid::Uuid::new_v4().simple().to_string();
-    let (pid, name, compiler, main, uid) = (id.clone(), name.to_string(), compiler.to_string(), main.to_string(), user.id);
+    let (pid, name, compiler, main, uid) = (
+        id.clone(),
+        name.to_string(),
+        compiler.to_string(),
+        main.to_string(),
+        user.id,
+    );
     state
         .db(move |c| {
             c.execute(
@@ -118,11 +132,19 @@ pub struct CreateReq {
     template: Option<String>,
 }
 
-pub async fn create(State(state): State<SharedState>, user: User, Json(req): Json<CreateReq>) -> AppResult<Json<Value>> {
+pub async fn create(
+    State(state): State<SharedState>,
+    user: User,
+    Json(req): Json<CreateReq>,
+) -> AppResult<Json<Value>> {
     let name = clean_name(&req.name)?;
     let (compiler, main, content) = match req.template.as_deref() {
         Some("typst") => ("typst", "main.typ", TYPST_TEMPLATE),
-        Some("blank") => ("pdflatex", "main.tex", "\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n"),
+        Some("blank") => (
+            "pdflatex",
+            "main.tex",
+            "\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n",
+        ),
         _ => ("pdflatex", "main.tex", LATEX_TEMPLATE),
     };
     let id = insert_project(&state, &user, &name, compiler, main).await?;
@@ -138,25 +160,47 @@ pub async fn create(State(state): State<SharedState>, user: User, Json(req): Jso
 
 /// Creates a project from an uploaded .zip archive (Overleaf "Download → Source" zips,
 /// arXiv source bundles, or any zip of a LaTeX/Typst project).
-pub async fn import_zip(State(state): State<SharedState>, user: User, mut mp: Multipart) -> AppResult<Json<Value>> {
+pub async fn import_zip(
+    State(state): State<SharedState>,
+    user: User,
+    mut mp: Multipart,
+) -> AppResult<Json<Value>> {
     let mut name = None;
     let mut data = None;
-    while let Some(field) = mp.next_field().await.map_err(|e| AppError::bad(e.to_string()))? {
+    while let Some(field) = mp
+        .next_field()
+        .await
+        .map_err(|e| AppError::bad(e.to_string()))?
+    {
         match field.name() {
             Some("name") => name = Some(field.text().await.unwrap_or_default()),
             Some("file") => {
                 if name.is_none() {
                     // Overleaf exports are named `Project_Name.zip`.
-                    name = field.file_name().map(|f| f.trim_end_matches(".zip").replace('_', " "));
+                    name = field
+                        .file_name()
+                        .map(|f| f.trim_end_matches(".zip").replace('_', " "));
                 }
-                data = Some(field.bytes().await.map_err(|e| AppError::bad(e.to_string()))?);
+                data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::bad(e.to_string()))?,
+                );
             }
             _ => {}
         }
     }
     let data = data.ok_or_else(|| AppError::bad("missing file"))?;
-    let name = clean_name(&name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "Imported project".into()))?;
-    let tmp = state.cfg.data_dir.join(format!("tmp-{}", uuid::Uuid::new_v4().simple()));
+    let name = clean_name(
+        &name
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or_else(|| "Imported project".into()),
+    )?;
+    let tmp = state
+        .cfg
+        .data_dir
+        .join(format!("tmp-{}", uuid::Uuid::new_v4().simple()));
     let t = tmp.clone();
     let res = tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&t)?;
@@ -178,7 +222,8 @@ pub async fn import_zip(State(state): State<SharedState>, user: User, mut mp: Mu
     tokio::fs::rename(&tmp, &dir).await?;
     init_repo(&dir).await?;
     commit_all(&dir, None, "Import project", Some(&user)).await?;
-    let note = (compiler != det.wanted).then(|| format!("{} is not installed here, using {compiler}", det.wanted));
+    let note = (compiler != det.wanted)
+        .then(|| format!("{} is not installed here, using {compiler}", det.wanted));
     Ok(Json(json!({
         "id": id,
         "name": name,
@@ -191,7 +236,11 @@ pub async fn import_zip(State(state): State<SharedState>, user: User, mut mp: Mu
     })))
 }
 
-pub async fn get(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<Value>> {
+pub async fn get(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
     let pid = id.clone();
     let (mut project, members) = state
@@ -234,23 +283,32 @@ pub async fn update(
         Some(_) => return Err(AppError::forbidden()),
         None => None,
     };
-    if let Some(c) = &req.compiler {
-        if !is_known_compiler(c) {
-            return Err(AppError::bad("unknown compiler"));
-        }
+    if let Some(c) = &req.compiler
+        && !is_known_compiler(c)
+    {
+        return Err(AppError::bad("unknown compiler"));
     }
     let main = req.main_file.map(|m| clean_rel_path(&m)).transpose()?;
     let pid = id.clone();
     state
         .db(move |c| {
             if let Some(n) = name {
-                c.execute("UPDATE projects SET name = ?2 WHERE id = ?1", params![pid, n])?;
+                c.execute(
+                    "UPDATE projects SET name = ?2 WHERE id = ?1",
+                    params![pid, n],
+                )?;
             }
             if let Some(cp) = req.compiler {
-                c.execute("UPDATE projects SET compiler = ?2 WHERE id = ?1", params![pid, cp])?;
+                c.execute(
+                    "UPDATE projects SET compiler = ?2 WHERE id = ?1",
+                    params![pid, cp],
+                )?;
             }
             if let Some(m) = main {
-                c.execute("UPDATE projects SET main_file = ?2 WHERE id = ?1", params![pid, m])?;
+                c.execute(
+                    "UPDATE projects SET main_file = ?2 WHERE id = ?1",
+                    params![pid, m],
+                )?;
             }
             Ok(())
         })
@@ -261,16 +319,29 @@ pub async fn update(
     Ok(Json(json!({ "ok": true })))
 }
 
-pub async fn remove(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<Value>> {
+pub async fn remove(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<Value>> {
     let role = state.role(&id, user.id).await?;
     let pid = id.clone();
     if role != Role::Owner {
         // Non-owners "delete" a shared project by leaving it.
-        state.db(move |c| c.execute("DELETE FROM members WHERE project_id = ?1 AND user_id = ?2", params![pid, user.id])).await?;
+        state
+            .db(move |c| {
+                c.execute(
+                    "DELETE FROM members WHERE project_id = ?1 AND user_id = ?2",
+                    params![pid, user.id],
+                )
+            })
+            .await?;
         return Ok(Json(json!({ "ok": true, "left": true })));
     }
     state.hub.close_room(&id);
-    state.db(move |c| c.execute("DELETE FROM projects WHERE id = ?1", [pid])).await?;
+    state
+        .db(move |c| c.execute("DELETE FROM projects WHERE id = ?1", [pid]))
+        .await?;
     let _ = tokio::fs::remove_dir_all(state.cfg.project_dir(&id)).await;
     let _ = tokio::fs::remove_dir_all(state.cfg.project_build_dir(&id)).await;
     Ok(Json(json!({ "ok": true })))
@@ -291,15 +362,29 @@ pub async fn copy(
     flush_project(&state, &id).await?;
     let pid = id.clone();
     let (name, compiler, main): (String, String, String) = state
-        .db(move |c| c.query_row("SELECT name, compiler, main_file FROM projects WHERE id = ?1", [pid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))
+        .db(move |c| {
+            c.query_row(
+                "SELECT name, compiler, main_file FROM projects WHERE id = ?1",
+                [pid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+        })
         .await?;
     let new_name = clean_name(&req.name.unwrap_or_else(|| format!("{name} (copy)")))?;
     let new_id = insert_project(&state, &user, &new_name, &compiler, &main).await?;
     let src = state.cfg.project_dir(&id);
     let dst = state.cfg.project_dir(&new_id);
-    let out = tokio::process::Command::new("git").arg("clone").arg("-q").arg(&src).arg(&dst).output().await?;
+    let out = tokio::process::Command::new("git")
+        .arg("clone")
+        .arg("-q")
+        .arg(&src)
+        .arg(&dst)
+        .output()
+        .await?;
     if !out.status.success() {
-        return Err(anyhow::anyhow!("copy failed: {}", String::from_utf8_lossy(&out.stderr)).into());
+        return Err(
+            anyhow::anyhow!("copy failed: {}", String::from_utf8_lossy(&out.stderr)).into(),
+        );
     }
     // Copy uncommitted working-tree state too, then re-init git config for the copy.
     let (s, d) = (src.clone(), dst.clone());
@@ -316,7 +401,9 @@ pub async fn copy(
     })
     .await
     .map_err(anyhow::Error::from)??;
-    crate::git::git(&dst, &["remote", "remove", "origin"]).await.ok();
+    crate::git::git(&dst, &["remote", "remove", "origin"])
+        .await
+        .ok();
     init_repo(&dst).await?;
     commit_all(&dst, None, "Copy project", Some(&user)).await?;
     Ok(Json(json!({ "id": new_id })))
@@ -343,9 +430,16 @@ pub async fn add_member(
     let pid = id.clone();
     let res: Option<i64> = state
         .db(move |c| {
-            let uid: Option<i64> = c.query_row("SELECT id FROM users WHERE email = ?1", [&email], |r| r.get(0)).optional()?;
+            let uid: Option<i64> = c
+                .query_row("SELECT id FROM users WHERE email = ?1", [&email], |r| {
+                    r.get(0)
+                })
+                .optional()?;
             let Some(uid) = uid else { return Ok(None) };
-            let owner: i64 = c.query_row("SELECT owner_id FROM projects WHERE id = ?1", [&pid], |r| r.get(0))?;
+            let owner: i64 =
+                c.query_row("SELECT owner_id FROM projects WHERE id = ?1", [&pid], |r| {
+                    r.get(0)
+                })?;
             if owner == uid {
                 return Ok(Some(-1));
             }
@@ -358,7 +452,9 @@ pub async fn add_member(
         })
         .await?;
     match res {
-        None => Err(AppError::bad("no user with that email — they need an account first")),
+        None => Err(AppError::bad(
+            "no user with that email — they need an account first",
+        )),
         Some(-1) => Err(AppError::bad("that user owns the project")),
         Some(uid) => Ok(Json(json!({ "ok": true, "userId": uid }))),
     }
@@ -372,11 +468,22 @@ pub async fn remove_member(
     if uid != user.id {
         state.require(&id, user.id, Role::Owner).await?;
     }
-    state.db(move |c| c.execute("DELETE FROM members WHERE project_id = ?1 AND user_id = ?2", params![id, uid])).await?;
+    state
+        .db(move |c| {
+            c.execute(
+                "DELETE FROM members WHERE project_id = ?1 AND user_id = ?2",
+                params![id, uid],
+            )
+        })
+        .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
-pub async fn chat_history(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<Value>> {
+pub async fn chat_history(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
     let rows = state
         .db(move |c| {

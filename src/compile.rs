@@ -48,7 +48,10 @@ fn tools() -> &'static Tools {
     T.get_or_init(|| Tools {
         latexmk: which("latexmk") && which("perl"),
         synctex: which("synctex"),
-        compilers: ["pdflatex", "xelatex", "lualatex", "tectonic", "typst"].into_iter().filter(|c| which(c)).collect(),
+        compilers: ["pdflatex", "xelatex", "lualatex", "tectonic", "typst"]
+            .into_iter()
+            .filter(|c| which(c))
+            .collect(),
     })
 }
 
@@ -57,7 +60,10 @@ pub fn available_compilers() -> Vec<&'static str> {
 }
 
 pub fn is_known_compiler(c: &str) -> bool {
-    matches!(c, "pdflatex" | "xelatex" | "lualatex" | "tectonic" | "typst")
+    matches!(
+        c,
+        "pdflatex" | "xelatex" | "lualatex" | "tectonic" | "typst"
+    )
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -80,7 +86,10 @@ fn sync_tree(src: &FsPath, dst: &FsPath) -> std::io::Result<()> {
     let old: std::collections::HashMap<String, String> = std::fs::read_to_string(&manifest)
         .unwrap_or_default()
         .lines()
-        .filter_map(|l| l.split_once('\t').map(|(p, s)| (p.to_string(), s.to_string())))
+        .filter_map(|l| {
+            l.split_once('\t')
+                .map(|(p, s)| (p.to_string(), s.to_string()))
+        })
         .collect();
     let mut now = Vec::new();
     for (rel, full, meta) in walk(src) {
@@ -89,7 +98,12 @@ fn sync_tree(src: &FsPath, dst: &FsPath) -> std::io::Result<()> {
             std::fs::create_dir_all(&target)?;
             continue;
         }
-        let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let stamp = format!("{}:{}", meta.len(), mtime);
         if old.get(&rel) != Some(&stamp) || !target.exists() {
             std::fs::copy(&full, &target)?;
@@ -101,7 +115,13 @@ fn sync_tree(src: &FsPath, dst: &FsPath) -> std::io::Result<()> {
         let _ = std::fs::remove_file(dst.join(stale));
     }
     now.sort();
-    std::fs::write(manifest, now.iter().map(|(r, s)| format!("{r}\t{s}")).collect::<Vec<_>>().join("\n"))
+    std::fs::write(
+        manifest,
+        now.iter()
+            .map(|(r, s)| format!("{r}\t{s}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 struct RunResult {
@@ -109,7 +129,12 @@ struct RunResult {
     timed_out: bool,
 }
 
-async fn run(state: &SharedState, dir: &FsPath, argv: &[String], deadline: Instant) -> std::io::Result<RunResult> {
+async fn run(
+    state: &SharedState,
+    dir: &FsPath,
+    argv: &[String],
+    deadline: Instant,
+) -> std::io::Result<RunResult> {
     let mut full: Vec<String> = state.cfg.compile_wrapper.clone();
     full.extend_from_slice(argv);
     // LuaTeX resolves its own TeX tree through absolute paths, which `openin_any=p` rejects
@@ -140,26 +165,55 @@ async fn run(state: &SharedState, dir: &FsPath, argv: &[String], deadline: Insta
             let out = out?;
             let mut s = String::from_utf8_lossy(&out.stdout).to_string();
             s.push_str(&String::from_utf8_lossy(&out.stderr));
-            Ok(RunResult { output: s, timed_out: false })
+            Ok(RunResult {
+                output: s,
+                timed_out: false,
+            })
         }
         Err(_) => {
             if let Some(pid) = pid {
-                let _ = Command::new("kill").args(["-9", &format!("-{pid}")]).status().await;
+                let _ = Command::new("kill")
+                    .args(["-9", &format!("-{pid}")])
+                    .status()
+                    .await;
             }
-            Ok(RunResult { output: String::new(), timed_out: true })
+            Ok(RunResult {
+                output: String::new(),
+                timed_out: true,
+            })
         }
     }
 }
 
 fn stem(main: &str) -> String {
-    main.rsplit_once('.').map(|(s, _)| s.to_string()).unwrap_or_else(|| main.to_string())
+    main.rsplit_once('.')
+        .map(|(s, _)| s.to_string())
+        .unwrap_or_else(|| main.to_string())
 }
 
-async fn compile_latex(state: &SharedState, dir: &FsPath, engine: &str, main: &str, deadline: Instant) -> std::io::Result<(String, bool)> {
+async fn compile_latex(
+    state: &SharedState,
+    dir: &FsPath,
+    engine: &str,
+    main: &str,
+    deadline: Instant,
+) -> std::io::Result<(String, bool)> {
     let s = stem(main);
     let mut transcript = String::new();
     if engine == "tectonic" {
-        let r = run(state, dir, &["tectonic".into(), "--synctex".into(), "--keep-logs".into(), "--keep-intermediates".into(), main.into()], deadline).await?;
+        let r = run(
+            state,
+            dir,
+            &[
+                "tectonic".into(),
+                "--synctex".into(),
+                "--keep-logs".into(),
+                "--keep-intermediates".into(),
+                main.into(),
+            ],
+            deadline,
+        )
+        .await?;
         let log = std::fs::read_to_string(dir.join(format!("{s}.log"))).unwrap_or_default();
         return Ok((if log.is_empty() { r.output } else { log }, r.timed_out));
     }
@@ -172,15 +226,32 @@ async fn compile_latex(state: &SharedState, dir: &FsPath, engine: &str, main: &s
         let r = run(
             state,
             dir,
-            &["latexmk", flag, "-f", "-interaction=nonstopmode", "-file-line-error", "-synctex=1", main].map(String::from),
+            &[
+                "latexmk",
+                flag,
+                "-f",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-synctex=1",
+                main,
+            ]
+            .map(String::from),
             deadline,
         )
         .await?;
-        let log = std::fs::read_to_string(dir.join(format!("{s}.log"))).unwrap_or_else(|_| r.output.clone());
+        let log = std::fs::read_to_string(dir.join(format!("{s}.log")))
+            .unwrap_or_else(|_| r.output.clone());
         return Ok((log, r.timed_out));
     }
     // Manual pipeline: engine → (bibtex|biber) → engine (until references settle).
-    let tex = [engine, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", main].map(String::from);
+    let tex = [
+        engine,
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "-synctex=1",
+        main,
+    ]
+    .map(String::from);
     let mut bib_done = false;
     for pass in 0..4 {
         let r = run(state, dir, &tex, deadline).await?;
@@ -188,7 +259,9 @@ async fn compile_latex(state: &SharedState, dir: &FsPath, engine: &str, main: &s
             return Ok((transcript, true));
         }
         let log = std::fs::read_to_string(dir.join(format!("{s}.log"))).unwrap_or(r.output);
-        let mut rerun = log.contains("Rerun to get") || log.contains("Rerun LaTeX") || log.contains("(rerunfilecheck)");
+        let mut rerun = log.contains("Rerun to get")
+            || log.contains("Rerun LaTeX")
+            || log.contains("(rerunfilecheck)");
         if !bib_done {
             bib_done = true;
             let aux = std::fs::read_to_string(dir.join(format!("{s}.aux"))).unwrap_or_default();
@@ -202,7 +275,13 @@ async fn compile_latex(state: &SharedState, dir: &FsPath, engine: &str, main: &s
                 rerun = true;
             }
             if dir.join(format!("{s}.idx")).exists() && which("makeindex") {
-                let _ = run(state, dir, &["makeindex".into(), format!("{s}.idx")], deadline).await?;
+                let _ = run(
+                    state,
+                    dir,
+                    &["makeindex".into(), format!("{s}.idx")],
+                    deadline,
+                )
+                .await?;
                 rerun = true;
             }
         }
@@ -222,27 +301,64 @@ fn parse_latex_log(log: &str) -> Vec<Issue> {
         // file:line: message   (thanks to -file-line-error)
         if let Some((file, rest)) = split_file_line(l) {
             let (line, msg) = rest;
-            let ctx = lines.get(i + 1..(i + 3).min(lines.len())).map(|c| c.join("\n")).unwrap_or_default();
-            issues.push(Issue { level: "error", file: Some(file), line: Some(line), message: msg.to_string(), context: ctx });
+            let ctx = lines
+                .get(i + 1..(i + 3).min(lines.len()))
+                .map(|c| c.join("\n"))
+                .unwrap_or_default();
+            issues.push(Issue {
+                level: "error",
+                file: Some(file),
+                line: Some(line),
+                message: msg.to_string(),
+                context: ctx,
+            });
         } else if let Some(msg) = l.strip_prefix("! ") {
             let mut line = None;
             for next in lines.iter().skip(i + 1).take(12) {
                 if let Some(n) = next.strip_prefix("l.") {
-                    line = n.split(|c: char| !c.is_ascii_digit()).next().and_then(|d| d.parse().ok());
+                    line = n
+                        .split(|c: char| !c.is_ascii_digit())
+                        .next()
+                        .and_then(|d| d.parse().ok());
                     break;
                 }
             }
-            issues.push(Issue { level: "error", file: None, line, message: msg.to_string(), context: String::new() });
-        } else if l.contains("Warning:") && (l.starts_with("LaTeX") || l.starts_with("Package") || l.starts_with("Class") || l.starts_with("pdfTeX")) {
+            issues.push(Issue {
+                level: "error",
+                file: None,
+                line,
+                message: msg.to_string(),
+                context: String::new(),
+            });
+        } else if l.contains("Warning:")
+            && (l.starts_with("LaTeX")
+                || l.starts_with("Package")
+                || l.starts_with("Class")
+                || l.starts_with("pdfTeX"))
+        {
             let mut msg = l.to_string();
             let mut j = i + 1;
-            while j < lines.len() && !lines[j].trim().is_empty() && lines[j].starts_with(' ') && j < i + 6 {
+            while j < lines.len()
+                && !lines[j].trim().is_empty()
+                && lines[j].starts_with(' ')
+                && j < i + 6
+            {
                 msg.push(' ');
                 msg.push_str(lines[j].trim());
                 j += 1;
             }
-            let line = msg.split("input line ").nth(1).and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|d| d.parse().ok());
-            issues.push(Issue { level: "warning", file: None, line, message: msg, context: String::new() });
+            let line = msg
+                .split("input line ")
+                .nth(1)
+                .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|d| d.parse().ok());
+            issues.push(Issue {
+                level: "warning",
+                file: None,
+                line,
+                message: msg,
+                context: String::new(),
+            });
         } else if l.starts_with("Overfull \\") || l.starts_with("Underfull \\") {
             let line = l
                 .split(" at line")
@@ -250,7 +366,13 @@ fn parse_latex_log(log: &str) -> Vec<Issue> {
                 .map(|r| r.trim_start_matches('s').trim())
                 .and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next())
                 .and_then(|d| d.parse().ok());
-            issues.push(Issue { level: "typesetting", file: None, line, message: l.to_string(), context: String::new() });
+            issues.push(Issue {
+                level: "typesetting",
+                file: None,
+                line,
+                message: l.to_string(),
+                context: String::new(),
+            });
         }
         i += 1;
     }
@@ -265,7 +387,12 @@ fn split_file_line(l: &str) -> Option<(String, (u32, &str))> {
     let file = parts.next()?;
     let line = parts.next()?;
     let msg = parts.next()?.trim();
-    if file.is_empty() || file.contains(' ') || !file.contains('.') || line.is_empty() || !line.chars().all(|c| c.is_ascii_digit()) {
+    if file.is_empty()
+        || file.contains(' ')
+        || !file.contains('.')
+        || line.is_empty()
+        || !line.chars().all(|c| c.is_ascii_digit())
+    {
         return None;
     }
     let file = file.trim_start_matches("./").to_string();
@@ -278,10 +405,9 @@ fn parse_typst(output: &str) -> Vec<Issue> {
         .filter_map(|l| {
             let (level, idx, sep) = if let Some(i) = l.find(": error: ") {
                 ("error", i, ": error: ")
-            } else if let Some(i) = l.find(": warning: ") {
-                ("warning", i, ": warning: ")
             } else {
-                return None;
+                let i = l.find(": warning: ")?;
+                ("warning", i, ": warning: ")
             };
             let loc = &l[..idx];
             let msg = &l[idx + sep.len()..];
@@ -289,7 +415,13 @@ fn parse_typst(output: &str) -> Vec<Issue> {
             let _col = p.next();
             let line = p.next().and_then(|n| n.parse().ok());
             let file = p.next().map(|f| f.trim_start_matches("./").to_string());
-            Some(Issue { level, file, line, message: msg.to_string(), context: String::new() })
+            Some(Issue {
+                level,
+                file,
+                line,
+                message: msg.to_string(),
+                context: String::new(),
+            })
         })
         .collect()
 }
@@ -309,19 +441,29 @@ pub async fn compile(
     state.require(&id, user.id, Role::Viewer).await?;
     let pid = id.clone();
     let (compiler, main_file): (String, String) = state
-        .db(move |c| c.query_row("SELECT compiler, main_file FROM projects WHERE id = ?1", [pid], |r| Ok((r.get(0)?, r.get(1)?))))
+        .db(move |c| {
+            c.query_row(
+                "SELECT compiler, main_file FROM projects WHERE id = ?1",
+                [pid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })
         .await?;
     let main = match body.and_then(|b| b.0.main_file) {
         Some(m) if !m.is_empty() => clean_rel_path(&m)?,
         _ => clean_rel_path(&main_file)?,
     };
     if !tools().compilers.contains(&compiler.as_str()) {
-        return Err(AppError::bad(format!("compiler '{compiler}' is not installed on this server")));
+        return Err(AppError::bad(format!(
+            "compiler '{compiler}' is not installed on this server"
+        )));
     }
     let src = state.cfg.project_dir(&id);
     let build = state.cfg.project_build_dir(&id);
     if !src.join(&main).is_file() {
-        return Err(AppError::bad(format!("main file '{main}' does not exist — set it in the project menu")));
+        return Err(AppError::bad(format!(
+            "main file '{main}' does not exist — set it in the project menu"
+        )));
     }
 
     // One compile per project at a time; queued globally by the semaphore.
@@ -334,9 +476,15 @@ pub async fn compile(
             room.flush_locked().await?;
         }
         let (s, b) = (src.clone(), build.clone());
-        tokio::task::spawn_blocking(move || sync_tree(&s, &b)).await.map_err(anyhow::Error::from)??;
+        tokio::task::spawn_blocking(move || sync_tree(&s, &b))
+            .await
+            .map_err(anyhow::Error::from)??;
     }
-    let _permit = state.compile_slots.acquire().await.map_err(anyhow::Error::from)?;
+    let _permit = state
+        .compile_slots
+        .acquire()
+        .await
+        .map_err(anyhow::Error::from)?;
     let started = Instant::now();
     let deadline = started + Duration::from_secs(state.cfg.compile_timeout_secs);
     let s = stem(&main);
@@ -347,7 +495,17 @@ pub async fn compile(
         let r = run(
             &state,
             &build,
-            &["typst", "compile", "--root", ".", "--diagnostic-format", "short", &main, &format!("{s}.pdf")].map(String::from),
+            &[
+                "typst",
+                "compile",
+                "--root",
+                ".",
+                "--diagnostic-format",
+                "short",
+                &main,
+                &format!("{s}.pdf"),
+            ]
+            .map(String::from),
             deadline,
         )
         .await?;
@@ -365,7 +523,10 @@ pub async fn compile(
     }
     let mut full_log = log;
     if timed_out {
-        full_log.push_str(&format!("\n\n[Lightleaf] Compilation timed out after {}s.\n", state.cfg.compile_timeout_secs));
+        full_log.push_str(&format!(
+            "\n\n[Lightleaf] Compilation timed out after {}s.\n",
+            state.cfg.compile_timeout_secs
+        ));
     }
     tokio::fs::write(build.join(".output.log"), &full_log).await?;
     let has_errors = issues.iter().any(|i| i.level == "error");
@@ -400,8 +561,17 @@ pub async fn output(
         "output.log" => (".output.log", "text/plain; charset=utf-8"),
         _ => return Err(AppError::not_found()),
     };
-    let bytes = tokio::fs::read(state.cfg.project_build_dir(&id).join(file)).await.map_err(|_| AppError::not_found())?;
-    Ok(([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=3600")], bytes).into_response())
+    let bytes = tokio::fs::read(state.cfg.project_build_dir(&id).join(file))
+        .await
+        .map_err(|_| AppError::not_found())?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "private, max-age=3600"),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf)> {
@@ -409,8 +579,15 @@ async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf)
         return Err(AppError::bad("synctex is not installed"));
     }
     let pid = id.to_string();
-    let main: String = state.db(move |c| c.query_row("SELECT main_file FROM projects WHERE id = ?1", [pid], |r| r.get(0))).await?;
-    let build = std::fs::canonicalize(state.cfg.project_build_dir(id)).map_err(|_| AppError::not_found())?;
+    let main: String = state
+        .db(move |c| {
+            c.query_row("SELECT main_file FROM projects WHERE id = ?1", [pid], |r| {
+                r.get(0)
+            })
+        })
+        .await?;
+    let build = std::fs::canonicalize(state.cfg.project_build_dir(id))
+        .map_err(|_| AppError::not_found())?;
     Ok((build.join(format!("{}.pdf", stem(&main))), build))
 }
 
@@ -431,7 +608,11 @@ pub async fn synctex_from_pdf(
     state.require(&id, user.id, Role::Viewer).await?;
     let (pdf, build) = main_pdf(&state, &id).await?;
     let out = Command::new("synctex")
-        .args(["edit", "-o", &format!("{}:{:.2}:{:.2}:{}", q.page, q.h, q.v, pdf.display())])
+        .args([
+            "edit",
+            "-o",
+            &format!("{}:{:.2}:{:.2}:{}", q.page, q.h, q.v, pdf.display()),
+        ])
         .current_dir(&build)
         .output()
         .await?;
@@ -441,7 +622,10 @@ pub async fn synctex_from_pdf(
     for l in text.lines() {
         if let Some(f) = l.strip_prefix("Input:") {
             let f = f.trim();
-            let rel = f.strip_prefix(&*build.to_string_lossy()).unwrap_or(f).trim_start_matches('/');
+            let rel = f
+                .strip_prefix(&*build.to_string_lossy())
+                .unwrap_or(f)
+                .trim_start_matches('/');
             file = Some(rel.trim_start_matches("./").replace("/./", "/"));
         } else if let Some(n) = l.strip_prefix("Line:") {
             line = n.trim().parse::<u32>().ok();
@@ -474,7 +658,13 @@ pub async fn synctex_from_code(
     let rel = clean_rel_path(&q.file)?;
     let input = build.join(&rel);
     let out = Command::new("synctex")
-        .args(["view", "-i", &format!("{}:{}:{}", q.line, q.column, input.display()), "-o", &pdf.to_string_lossy()])
+        .args([
+            "view",
+            "-i",
+            &format!("{}:{}:{}", q.line, q.column, input.display()),
+            "-o",
+            &pdf.to_string_lossy(),
+        ])
         .current_dir(&build)
         .output()
         .await?;
@@ -498,7 +688,11 @@ pub async fn synctex_from_code(
             }
         }
     }
-    if res.contains_key("page") { Ok(Json(serde_json::Value::Object(res))) } else { Err(AppError::not_found()) }
+    if res.contains_key("page") {
+        Ok(Json(serde_json::Value::Object(res)))
+    } else {
+        Err(AppError::not_found())
+    }
 }
 
 #[cfg(test)]
@@ -512,12 +706,17 @@ mod tests {
         assert_eq!(is[0].file.as_deref(), Some("main.tex"));
         assert_eq!(is[0].line, Some(12));
         assert!(is.iter().any(|i| i.level == "warning" && i.line == Some(7)));
-        assert!(is.iter().any(|i| i.level == "typesetting" && i.line == Some(3)));
+        assert!(
+            is.iter()
+                .any(|i| i.level == "typesetting" && i.line == Some(3))
+        );
     }
 
     #[test]
     fn parses_typst() {
-        let is = parse_typst("main.typ:3:5: error: unknown variable: foo\nchap/a.typ:10:1: warning: unused");
+        let is = parse_typst(
+            "main.typ:3:5: error: unknown variable: foo\nchap/a.typ:10:1: warning: unused",
+        );
         assert_eq!(is.len(), 2);
         assert_eq!(is[0].line, Some(3));
         assert_eq!(is[1].file.as_deref(), Some("chap/a.typ"));

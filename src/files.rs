@@ -29,17 +29,26 @@ pub fn walk(root: &FsPath) -> Vec<(String, PathBuf, std::fs::Metadata)> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
             if dir == root && name == ".git" {
                 continue;
             }
-            let Ok(meta) = std::fs::symlink_metadata(e.path()) else { continue };
+            let Ok(meta) = std::fs::symlink_metadata(e.path()) else {
+                continue;
+            };
             if meta.file_type().is_symlink() {
                 continue;
             }
-            let rel = e.path().strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+            let rel = e
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             if meta.is_dir() {
                 stack.push(e.path());
             }
@@ -88,13 +97,22 @@ pub async fn read(
     state.require(&id, user.id, Role::Viewer).await?;
     flush_project(&state, &id).await?;
     let (rel, full) = join_safe(&state.cfg.project_dir(&id), &q.path)?;
-    let meta = tokio::fs::symlink_metadata(&full).await.map_err(|_| AppError::not_found())?;
+    let meta = tokio::fs::symlink_metadata(&full)
+        .await
+        .map_err(|_| AppError::not_found())?;
     if !meta.is_file() {
         return Err(AppError::not_found());
     }
     let bytes = tokio::fs::read(&full).await?;
     let mime = mime_guess::from_path(&rel).first_or_octet_stream();
-    Ok(([(header::CONTENT_TYPE, mime.to_string()), (header::CACHE_CONTROL, "no-cache".into())], bytes).into_response())
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CACHE_CONTROL, "no-cache".into()),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]
@@ -160,11 +178,18 @@ pub async fn rename(
     if let Some(parent) = to_full.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    tokio::fs::rename(&from_full, &to_full).await.map_err(|_| AppError::not_found())?;
+    tokio::fs::rename(&from_full, &to_full)
+        .await
+        .map_err(|_| AppError::not_found())?;
     // Keep the main file setting valid when it gets renamed.
     let (pid, f, t) = (id.clone(), from.clone(), to.clone());
     state
-        .db(move |c| c.execute("UPDATE projects SET main_file = ?3 WHERE id = ?1 AND main_file = ?2", rusqlite::params![pid, f, t]))
+        .db(move |c| {
+            c.execute(
+                "UPDATE projects SET main_file = ?3 WHERE id = ?1 AND main_file = ?2",
+                rusqlite::params![pid, f, t],
+            )
+        })
         .await?;
     if let Some(room) = state.hub.get(&id) {
         room.broadcast_json(json!({ "type": "renamed", "from": from, "to": to }));
@@ -186,7 +211,9 @@ pub async fn remove(
     if let Some(room) = state.hub.get(&id) {
         room.forget(&rel);
     }
-    let meta = tokio::fs::symlink_metadata(&full).await.map_err(|_| AppError::not_found())?;
+    let meta = tokio::fs::symlink_metadata(&full)
+        .await
+        .map_err(|_| AppError::not_found())?;
     if meta.is_dir() {
         tokio::fs::remove_dir_all(&full).await?;
     } else {
@@ -209,15 +236,28 @@ pub async fn upload(
     let root = state.cfg.project_dir(&id);
     let mut folder = String::new();
     let mut saved = Vec::new();
-    while let Some(field) = mp.next_field().await.map_err(|e| AppError::bad(e.to_string()))? {
+    while let Some(field) = mp
+        .next_field()
+        .await
+        .map_err(|e| AppError::bad(e.to_string()))?
+    {
         if field.name() == Some("folder") {
             folder = field.text().await.unwrap_or_default();
             continue;
         }
-        let Some(name) = field.file_name().map(|s| s.to_string()) else { continue };
-        let rel = if folder.trim().is_empty() { name } else { format!("{}/{}", folder.trim_end_matches('/'), name) };
+        let Some(name) = field.file_name().map(|s| s.to_string()) else {
+            continue;
+        };
+        let rel = if folder.trim().is_empty() {
+            name
+        } else {
+            format!("{}/{}", folder.trim_end_matches('/'), name)
+        };
         let (rel, full) = join_safe(&root, &rel)?;
-        let data = field.bytes().await.map_err(|e| AppError::bad(e.to_string()))?;
+        let data = field
+            .bytes()
+            .await
+            .map_err(|e| AppError::bad(e.to_string()))?;
         if let Some(parent) = full.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -251,25 +291,51 @@ pub async fn download_zip(
     state.require(&id, user.id, Role::Viewer).await?;
     flush_project(&state, &id).await?;
     let pid = id.clone();
-    let name: String = state.db(move |c| c.query_row("SELECT name FROM projects WHERE id = ?1", [pid], |r| r.get(0))).await?;
+    let name: String = state
+        .db(move |c| {
+            c.query_row("SELECT name FROM projects WHERE id = ?1", [pid], |r| {
+                r.get(0)
+            })
+        })
+        .await?;
     let root = state.cfg.project_dir(&id);
     // Leave out the .gitignore Lightleaf generated itself, so the archive matches Overleaf's.
     let bytes = tokio::task::spawn_blocking(move || {
-        crate::overleaf::export_zip(&root, |rel, data| rel == ".gitignore" && data == crate::projects::GITIGNORE.as_bytes())
+        crate::overleaf::export_zip(&root, |rel, data| {
+            rel == ".gitignore" && data == crate::projects::GITIGNORE.as_bytes()
+        })
     })
     .await
     .map_err(anyhow::Error::from)??;
     // Overleaf names downloads `Project_Name.zip`.
-    let ascii: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let ascii: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     let utf8: String = name
         .replace(' ', "_")
         .bytes()
-        .map(|b| if b.is_ascii_alphanumeric() || b"-_.".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
         .collect();
     Ok((
         [
             (header::CONTENT_TYPE, "application/zip".to_string()),
-            (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{ascii}.zip\"; filename*=UTF-8''{utf8}.zip")),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{ascii}.zip\"; filename*=UTF-8''{utf8}.zip"),
+            ),
         ],
         Body::from(bytes),
     )

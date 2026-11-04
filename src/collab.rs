@@ -47,8 +47,10 @@ const MSG_AWARENESS: u8 = 4;
 const DOC_IDLE_EVICT: Duration = Duration::from_secs(60);
 const MAX_DOC_BYTES: usize = 4 * 1024 * 1024;
 
-const COLORS: [&str; 10] =
-    ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#46a0a0", "#f032e6", "#808000", "#9a6324", "#000075"];
+const COLORS: [&str; 10] = [
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#46a0a0", "#f032e6", "#808000",
+    "#9a6324", "#000075",
+];
 
 #[derive(Default)]
 pub struct Hub {
@@ -89,7 +91,10 @@ struct DocEntry {
 
 impl DocEntry {
     fn new(content: &str) -> Self {
-        let doc = Doc::with_options(Options { offset_kind: OffsetKind::Utf16, ..Options::default() });
+        let doc = Doc::with_options(Options {
+            offset_kind: OffsetKind::Utf16,
+            ..Options::default()
+        });
         let text = doc.get_or_insert_text("content");
         {
             let mut txn = doc.transact_mut();
@@ -123,7 +128,10 @@ impl DocEntry {
             pre += 1;
         }
         let mut suf = 0;
-        while suf < a.len() - pre && suf < b.len() - pre && a[a.len() - 1 - suf] == b[b.len() - 1 - suf] {
+        while suf < a.len() - pre
+            && suf < b.len() - pre
+            && a[a.len() - 1 - suf] == b[b.len() - 1 - suf]
+        {
             suf += 1;
         }
         // Never split a UTF-16 surrogate pair.
@@ -178,7 +186,13 @@ impl Hub {
         let mut rooms = self.rooms.lock().unwrap();
         rooms
             .entry(id.to_string())
-            .or_insert_with(|| Arc::new(Room { id: id.to_string(), root, inner: Mutex::new(RoomInner::default()) }))
+            .or_insert_with(|| {
+                Arc::new(Room {
+                    id: id.to_string(),
+                    root,
+                    inner: Mutex::new(RoomInner::default()),
+                })
+            })
             .clone()
     }
 
@@ -263,7 +277,10 @@ impl Room {
     pub async fn reload_from_disk(&self) {
         let paths: Vec<String> = self.inner.lock().unwrap().docs.keys().cloned().collect();
         for path in paths {
-            let disk = tokio::fs::read(self.root.join(&path)).await.ok().filter(|b| is_text(b));
+            let disk = tokio::fs::read(self.root.join(&path))
+                .await
+                .ok()
+                .filter(|b| is_text(b));
             let mut inner = self.inner.lock().unwrap();
             let mut gone = false;
             let mut out = None;
@@ -272,7 +289,9 @@ impl Room {
                     None => gone = true,
                     Some(bytes) => {
                         let s = String::from_utf8_lossy(&bytes);
-                        out = entry.replace_content(&s).map(|u| (u, entry.subscribers.clone()));
+                        out = entry
+                            .replace_content(&s)
+                            .map(|u| (u, entry.subscribers.clone()));
                         entry.dirty = false;
                     }
                 }
@@ -296,10 +315,18 @@ impl Room {
     pub fn forget(&self, path: &str) {
         let prefix = format!("{path}/");
         let mut inner = self.inner.lock().unwrap();
-        inner.docs.retain(|p, _| p != path && !p.starts_with(&prefix));
+        inner
+            .docs
+            .retain(|p, _| p != path && !p.starts_with(&prefix));
     }
 
-    fn join(&self, cid: u64, path: &str, payload: &[u8], disk: Option<String>) -> Result<Message, String> {
+    fn join(
+        &self,
+        cid: u64,
+        path: &str,
+        payload: &[u8],
+        disk: Option<String>,
+    ) -> Result<Message, String> {
         let mut inner = self.inner.lock().unwrap();
         if !inner.docs.contains_key(path) {
             let content = disk.ok_or("not a text file")?;
@@ -310,7 +337,10 @@ impl Room {
         }
         let entry = inner.docs.get_mut(path).unwrap();
         entry.subscribers.insert(cid);
-        let client_epoch = payload.get(..8).map(|b| u64::from_be_bytes(b.try_into().unwrap())).unwrap_or(0);
+        let client_epoch = payload
+            .get(..8)
+            .map(|b| u64::from_be_bytes(b.try_into().unwrap()))
+            .unwrap_or(0);
         let sv = if client_epoch == entry.epoch {
             StateVector::decode_v1(&payload[8..]).unwrap_or_default()
         } else {
@@ -335,10 +365,10 @@ impl Room {
                 d.idle_since = Instant::now();
             }
         }
-        if let Some(c) = inner.clients.get_mut(&cid) {
-            if c.path.as_deref() == Some(path) {
-                c.path = None;
-            }
+        if let Some(c) = inner.clients.get_mut(&cid)
+            && c.path.as_deref() == Some(path)
+        {
+            c.path = None;
         }
     }
 
@@ -353,13 +383,24 @@ impl Room {
         }
         let entry = inner.docs.get_mut(path).ok_or("document is not open")?;
         let update = Update::decode_v1(payload).map_err(|e| format!("bad update: {e}"))?;
-        entry.doc.transact_mut().apply_update(update).map_err(|e| format!("bad update: {e}"))?;
+        entry
+            .doc
+            .transact_mut()
+            .apply_update(update)
+            .map_err(|e| format!("bad update: {e}"))?;
         if entry.text.len(&entry.doc.transact()) as usize > MAX_DOC_BYTES {
             tracing::warn!("doc {path} exceeds size limit");
         }
         entry.dirty = true;
-        let subs: Vec<u64> = entry.subscribers.iter().copied().filter(|s| *s != cid).collect();
-        inner.editors.insert(user.id, (user.name.clone(), user.email.clone()));
+        let subs: Vec<u64> = entry
+            .subscribers
+            .iter()
+            .copied()
+            .filter(|s| *s != cid)
+            .collect();
+        inner
+            .editors
+            .insert(user.id, (user.name.clone(), user.email.clone()));
         for id in subs {
             if let Some(c) = inner.clients.get(&id) {
                 let _ = c.tx.send(raw.clone());
@@ -372,10 +413,10 @@ impl Room {
         let inner = self.inner.lock().unwrap();
         if let Some(d) = inner.docs.get(path) {
             for id in &d.subscribers {
-                if *id != cid {
-                    if let Some(c) = inner.clients.get(id) {
-                        let _ = c.tx.send(raw.clone());
-                    }
+                if *id != cid
+                    && let Some(c) = inner.clients.get(id)
+                {
+                    let _ = c.tx.send(raw.clone());
                 }
             }
         }
@@ -394,7 +435,9 @@ impl Room {
     /// Evicts idle docs; returns true when the room is completely empty.
     fn evict_idle(&self) -> bool {
         let mut inner = self.inner.lock().unwrap();
-        inner.docs.retain(|_, d| d.dirty || !d.subscribers.is_empty() || d.idle_since.elapsed() < DOC_IDLE_EVICT);
+        inner.docs.retain(|_, d| {
+            d.dirty || !d.subscribers.is_empty() || d.idle_since.elapsed() < DOC_IDLE_EVICT
+        });
         inner.clients.is_empty() && inner.docs.is_empty()
     }
 }
@@ -423,7 +466,9 @@ pub fn spawn_flusher(state: SharedState) {
                 if room.evict_idle() {
                     let mut rooms = state.hub.rooms.lock().unwrap();
                     // Re-check under the hub lock so we never drop a room someone just joined.
-                    if rooms.get(&room.id).is_some_and(|r| Arc::ptr_eq(r, &room)) && room.evict_idle() {
+                    if rooms.get(&room.id).is_some_and(|r| Arc::ptr_eq(r, &room))
+                        && room.evict_idle()
+                    {
                         rooms.remove(&room.id);
                     }
                 }
@@ -441,10 +486,16 @@ pub async fn flush_all(state: &SharedState) {
 }
 
 fn same_origin(headers: &HeaderMap) -> bool {
-    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else { return true };
-    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else { return false };
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
+    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else {
+        return false;
+    };
     let origin_host = origin.split("://").nth(1).unwrap_or(origin);
-    let forwarded = headers.get("x-forwarded-host").and_then(|v| v.to_str().ok());
+    let forwarded = headers
+        .get("x-forwarded-host")
+        .and_then(|v| v.to_str().ok());
     origin_host == host || Some(origin_host) == forwarded
 }
 
@@ -457,13 +508,24 @@ pub async fn ws_handler(
     if !same_origin(&headers) {
         return Err(AppError::forbidden());
     }
-    let user = user_from_session(&state, &headers).await?.ok_or_else(AppError::unauthorized)?;
+    let user = user_from_session(&state, &headers)
+        .await?
+        .ok_or_else(AppError::unauthorized)?;
     let role = state.role(&id, user.id).await?;
     let root = state.cfg.project_dir(&id);
-    Ok(ws.max_message_size(8 * 1024 * 1024).on_upgrade(move |socket| client_loop(state, id, root, user, role, socket)))
+    Ok(ws
+        .max_message_size(8 * 1024 * 1024)
+        .on_upgrade(move |socket| client_loop(state, id, root, user, role, socket)))
 }
 
-async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User, role: Role, socket: WebSocket) {
+async fn client_loop(
+    state: SharedState,
+    pid: String,
+    root: PathBuf,
+    user: User,
+    role: Role,
+    socket: WebSocket,
+) {
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let cid = state.hub.next_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -471,9 +533,20 @@ async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User,
     {
         let mut inner = room.inner.lock().unwrap();
         let color = COLORS[(user.id as usize) % COLORS.len()];
-        inner.clients.insert(cid, Client { tx: tx.clone(), user: user.clone(), can_write: role.can_write(), color, path: None });
+        inner.clients.insert(
+            cid,
+            Client {
+                tx: tx.clone(),
+                user: user.clone(),
+                can_write: role.can_write(),
+                color,
+                path: None,
+            },
+        );
     }
-    let _ = tx.send(json_msg(json!({ "type": "hello", "clientId": cid, "role": role.as_str() })));
+    let _ = tx.send(json_msg(
+        json!({ "type": "hello", "clientId": cid, "role": role.as_str() }),
+    ));
     room.broadcast_presence();
 
     let writer = tokio::spawn(async move {
@@ -488,8 +561,12 @@ async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User,
     while let Some(Ok(msg)) = stream.next().await {
         match msg {
             Message::Binary(data) => {
-                let Some((kind, path, payload)) = parse_frame(&data) else { continue };
-                let Ok((path, full)) = join_safe(&root, path) else { continue };
+                let Some((kind, path, payload)) = parse_frame(&data) else {
+                    continue;
+                };
+                let Ok((path, full)) = join_safe(&root, path) else {
+                    continue;
+                };
                 match kind {
                     MSG_JOIN => {
                         let loaded = room.inner.lock().unwrap().docs.contains_key(&path);
@@ -497,7 +574,9 @@ async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User,
                             None
                         } else {
                             match tokio::fs::read(&full).await {
-                                Ok(b) if is_text(&b) => Some(String::from_utf8(b).unwrap_or_default()),
+                                Ok(b) if is_text(&b) => {
+                                    Some(String::from_utf8(b).unwrap_or_default())
+                                }
                                 _ => None,
                             }
                         };
@@ -506,7 +585,9 @@ async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User,
                                 let _ = tx.send(m);
                             }
                             Err(e) => {
-                                let _ = tx.send(json_msg(json!({ "type": "error", "path": path, "error": e })));
+                                let _ = tx.send(json_msg(
+                                    json!({ "type": "error", "path": path, "error": e }),
+                                ));
                             }
                         }
                         room.broadcast_presence();
@@ -516,18 +597,32 @@ async fn client_loop(state: SharedState, pid: String, root: PathBuf, user: User,
                         room.broadcast_presence();
                     }
                     MSG_UPDATE => {
-                        if let Err(e) = room.update(cid, &path, payload, Message::Binary(data.clone())) {
-                            let _ = tx.send(json_msg(json!({ "type": "error", "path": path, "error": e })));
+                        if let Err(e) =
+                            room.update(cid, &path, payload, Message::Binary(data.clone()))
+                        {
+                            let _ = tx.send(json_msg(
+                                json!({ "type": "error", "path": path, "error": e }),
+                            ));
                         }
                     }
-                    MSG_AWARENESS => room.relay_awareness(cid, &path, Message::Binary(data.clone())),
+                    MSG_AWARENESS => {
+                        room.relay_awareness(cid, &path, Message::Binary(data.clone()))
+                    }
                     _ => {}
                 }
             }
             Message::Text(text) => {
-                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
                 if v["type"] == "chat" {
-                    let body: String = v["body"].as_str().unwrap_or("").trim().chars().take(4000).collect();
+                    let body: String = v["body"]
+                        .as_str()
+                        .unwrap_or("")
+                        .trim()
+                        .chars()
+                        .take(4000)
+                        .collect();
                     if body.is_empty() {
                         continue;
                     }

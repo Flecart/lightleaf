@@ -23,6 +23,17 @@ pub async fn static_handler(uri: Uri) -> Response {
         },
     };
     let mime = mime_guess::from_path(&name).first_or_octet_stream();
-    let cache = if name.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" };
-    ([(header::CONTENT_TYPE, mime.as_ref()), (header::CACHE_CONTROL, cache)], file.data).into_response()
+    let cache = if name.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    (
+        [
+            (header::CONTENT_TYPE, mime.as_ref()),
+            (header::CACHE_CONTROL, cache),
+        ],
+        file.data,
+    )
+        .into_response()
 }

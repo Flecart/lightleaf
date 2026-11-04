@@ -32,14 +32,34 @@ fn is_junk(rel: &str) -> bool {
         return true;
     }
     let lower = name.to_ascii_lowercase();
-    [".aux", ".log", ".fls", ".fdb_latexmk", ".synctex.gz", ".synctex", ".synctex(busy)", ".xdv", ".blg", ".run.xml", ".bcf"]
-        .iter()
-        .any(|ext| lower.ends_with(ext))
+    [
+        ".aux",
+        ".log",
+        ".fls",
+        ".fdb_latexmk",
+        ".synctex.gz",
+        ".synctex",
+        ".synctex(busy)",
+        ".xdv",
+        ".blg",
+        ".run.xml",
+        ".bcf",
+    ]
+    .iter()
+    .any(|ext| lower.ends_with(ext))
 }
 
 fn zip_time(meta: &std::fs::Metadata) -> Option<zip::DateTime> {
     let t = time::OffsetDateTime::from(meta.modified().ok()?);
-    zip::DateTime::from_date_and_time(t.year().try_into().ok()?, t.month() as u8, t.day(), t.hour(), t.minute(), t.second()).ok()
+    zip::DateTime::from_date_and_time(
+        t.year().try_into().ok()?,
+        t.month() as u8,
+        t.day(),
+        t.hour(),
+        t.minute(),
+        t.second(),
+    )
+    .ok()
 }
 
 /// Builds an Overleaf-style source zip: files at the root, directories preserved,
@@ -88,14 +108,25 @@ fn entry_name(raw: &str) -> String {
 pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
     if archive.len() > MAX_ENTRIES {
-        anyhow::bail!("archive has too many entries ({} > {MAX_ENTRIES})", archive.len());
+        anyhow::bail!(
+            "archive has too many entries ({} > {MAX_ENTRIES})",
+            archive.len()
+        );
     }
     let names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().and_then(|f| f.name().ok().map(|n| entry_name(&n))))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|n| entry_name(&n)))
+        })
         .collect();
 
     // Strip one wrapping folder if every meaningful entry lives inside it.
-    let meaningful: Vec<&String> = names.iter().filter(|n| !is_junk(n) && !n.is_empty()).collect();
+    let meaningful: Vec<&String> = names
+        .iter()
+        .filter(|n| !is_junk(n) && !n.is_empty())
+        .collect();
     let prefix = meaningful
         .first()
         .and_then(|n| n.split_once('/').map(|(top, _)| format!("{top}/")))
@@ -105,7 +136,9 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
     let mut total: u64 = 0;
     for i in 0..archive.len() {
         let mut f = archive.by_index(i)?;
-        let Ok(raw) = f.name().map(|n| entry_name(&n)) else { continue };
+        let Ok(raw) = f.name().map(|n| entry_name(&n)) else {
+            continue;
+        };
         let name = match &prefix {
             Some(p) => raw.strip_prefix(p.as_str()).unwrap_or(&raw).to_string(),
             None => raw.clone(),
@@ -133,7 +166,10 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
         }
         total += f.size();
         if total > MAX_TOTAL_BYTES {
-            anyhow::bail!("archive is larger than {} MB uncompressed", MAX_TOTAL_BYTES / 1024 / 1024);
+            anyhow::bail!(
+                "archive is larger than {} MB uncompressed",
+                MAX_TOTAL_BYTES / 1024 / 1024
+            );
         }
         if let Some(p) = full.parent() {
             std::fs::create_dir_all(p)?;
@@ -180,7 +216,9 @@ fn strip_comments(src: &str) -> String {
 
 fn document_class(src: &str) -> Option<String> {
     let code = strip_comments(src);
-    let idx = code.find("\\documentclass").or_else(|| code.find("\\documentstyle"))?;
+    let idx = code
+        .find("\\documentclass")
+        .or_else(|| code.find("\\documentstyle"))?;
     let rest = &code[idx..];
     let open = rest.find('{')?;
     let close = rest[open..].find('}')?;
@@ -200,7 +238,11 @@ pub struct Detected {
 /// `main.tex`, shallow paths, and real documents over `subfiles`/`standalone` pieces.
 /// Falls back to Typst when there is no LaTeX root document.
 pub fn detect(root: &Path) -> Detected {
-    let files: Vec<String> = crate::files::walk(root).into_iter().filter(|e| e.2.is_file()).map(|e| e.0).collect();
+    let files: Vec<String> = crate::files::walk(root)
+        .into_iter()
+        .filter(|e| e.2.is_file())
+        .map(|e| e.0)
+        .collect();
     let read = |p: &str| std::fs::read_to_string(root.join(p)).unwrap_or_default();
 
     let mut tex_roots: Vec<(String, String)> = files
@@ -223,13 +265,27 @@ pub fn detect(root: &Path) -> Detected {
 
     if let Some((main, _)) = tex_roots.first() {
         let (wanted, reason) = detect_engine(root, main, &read(main));
-        return Detected { main_file: main.clone(), wanted, reason };
+        return Detected {
+            main_file: main.clone(),
+            wanted,
+            reason,
+        };
     }
 
     let mut typ: Vec<&String> = files.iter().filter(|f| f.ends_with(".typ")).collect();
-    typ.sort_by_key(|f| (f.rsplit('/').next() != Some("main.typ"), f.matches('/').count(), (*f).clone()));
+    typ.sort_by_key(|f| {
+        (
+            f.rsplit('/').next() != Some("main.typ"),
+            f.matches('/').count(),
+            (*f).clone(),
+        )
+    });
     if let Some(main) = typ.first() {
-        return Detected { main_file: (*main).clone(), wanted: "typst".into(), reason: "Typst project".into() };
+        return Detected {
+            main_file: (*main).clone(),
+            wanted: "typst".into(),
+            reason: "Typst project".into(),
+        };
     }
 
     let any_tex = files.iter().find(|f| f.ends_with(".tex")).cloned();
@@ -244,13 +300,15 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
     // 1. Magic comment, e.g. `% !TEX program = xelatex` (TeXShop, TeXstudio, VS Code, ...).
     for line in src.lines().take(30) {
         let l = line.trim().to_ascii_lowercase();
-        if l.starts_with('%') && l.contains("!tex") && l.contains("program") {
-            if let Some(v) = l.split('=').nth(1) {
-                let v = v.trim();
-                for e in ["xelatex", "lualatex", "pdflatex", "tectonic"] {
-                    if v.starts_with(e) {
-                        return (e.into(), format!("`% !TEX program` comment in {main}"));
-                    }
+        if l.starts_with('%')
+            && l.contains("!tex")
+            && l.contains("program")
+            && let Some(v) = l.split('=').nth(1)
+        {
+            let v = v.trim();
+            for e in ["xelatex", "lualatex", "pdflatex", "tectonic"] {
+                if v.starts_with(e) {
+                    return (e.into(), format!("`% !TEX program` comment in {main}"));
                 }
             }
         }
@@ -258,12 +316,22 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
     // 2. latexmkrc in the project root (Overleaf honours this file too).
     for rc in ["latexmkrc", ".latexmkrc"] {
         if let Ok(conf) = std::fs::read_to_string(root.join(rc)) {
-            let conf = conf.lines().map(|l| l.split('#').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+            let conf = conf
+                .lines()
+                .map(|l| l.split('#').next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n");
             let squashed: String = conf.chars().filter(|c| !c.is_whitespace()).collect();
-            if squashed.contains("$pdf_mode=5") || squashed.contains("$pdflatex='xelatex") || squashed.contains("$pdflatex=\"xelatex") {
+            if squashed.contains("$pdf_mode=5")
+                || squashed.contains("$pdflatex='xelatex")
+                || squashed.contains("$pdflatex=\"xelatex")
+            {
                 return ("xelatex".into(), format!("{rc} selects XeLaTeX"));
             }
-            if squashed.contains("$pdf_mode=4") || squashed.contains("$pdflatex='lualatex") || squashed.contains("$pdflatex=\"lualatex") {
+            if squashed.contains("$pdf_mode=4")
+                || squashed.contains("$pdflatex='lualatex")
+                || squashed.contains("$pdflatex=\"lualatex")
+            {
                 return ("lualatex".into(), format!("{rc} selects LuaLaTeX"));
             }
         }
@@ -271,13 +339,39 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
     // 3. Engine-specific packages.
     let code = strip_comments(src);
     let uses = |pkgs: &[&'static str]| loads_package(&code, pkgs);
-    if let Some(p) = uses(&["luacode", "luatexja", "luatexja-fontspec", "luaotfload", "luamplib", "lua-visual-debug", "lualatex-math"]) {
-        return ("lualatex".into(), format!("{main} loads the LuaTeX-only package `{p}`"));
+    if let Some(p) = uses(&[
+        "luacode",
+        "luatexja",
+        "luatexja-fontspec",
+        "luaotfload",
+        "luamplib",
+        "lua-visual-debug",
+        "lualatex-math",
+    ]) {
+        return (
+            "lualatex".into(),
+            format!("{main} loads the LuaTeX-only package `{p}`"),
+        );
     }
-    if let Some(p) = uses(&["fontspec", "unicode-math", "polyglossia", "xeCJK", "xltxtra", "xunicode", "mathspec", "xepersian", "bidi"]) {
-        return ("xelatex".into(), format!("{main} loads `{p}`, which needs XeLaTeX or LuaLaTeX"));
+    if let Some(p) = uses(&[
+        "fontspec",
+        "unicode-math",
+        "polyglossia",
+        "xeCJK",
+        "xltxtra",
+        "xunicode",
+        "mathspec",
+        "xepersian",
+        "bidi",
+    ]) {
+        return (
+            "xelatex".into(),
+            format!("{main} loads `{p}`, which needs XeLaTeX or LuaLaTeX"),
+        );
     }
-    if code.contains("\\documentclass") && document_class(src).is_some_and(|c| c.starts_with("ctex") || c == "xeCJK") {
+    if code.contains("\\documentclass")
+        && document_class(src).is_some_and(|c| c.starts_with("ctex") || c == "xeCJK")
+    {
         return ("xelatex".into(), format!("{main} uses a CJK class"));
     }
     ("pdflatex".into(), "default engine".into())
@@ -291,7 +385,11 @@ fn loads_package(code: &str, pkgs: &[&'static str]) -> Option<&'static str> {
         .flat_map(|(i, _)| {
             let rest = &code[i..];
             let end = rest.find('}').unwrap_or(rest.len()).min(400);
-            rest[..end].split(['{', ',']).skip(1).map(str::trim).collect::<Vec<_>>()
+            rest[..end]
+                .split(['{', ','])
+                .skip(1)
+                .map(str::trim)
+                .collect::<Vec<_>>()
         })
         .collect();
     pkgs.iter().copied().find(|p| loaded.contains(p))
@@ -311,7 +409,11 @@ pub fn choose_compiler(wanted: &str, installed: &[&str]) -> String {
         "typst" => &["typst"],
         _ => &["pdflatex", "lualatex", "xelatex", "tectonic"],
     };
-    fallbacks.iter().find(|c| has(c)).map(|c| c.to_string()).unwrap_or_else(|| wanted.to_string())
+    fallbacks
+        .iter()
+        .find(|c| has(c))
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| wanted.to_string())
 }
 
 #[cfg(test)]
@@ -346,8 +448,14 @@ mod tests {
     fn imports_overleaf_flat_zip_and_detects_root() {
         let d = tmp();
         let z = make_zip(&[
-            ("chapters/intro.tex", "\\documentclass[../main.tex]{subfiles}\n\\begin{document}x\\end{document}"),
-            ("main.tex", "\\documentclass{article}\n\\usepackage{fontspec}\n\\begin{document}\\end{document}"),
+            (
+                "chapters/intro.tex",
+                "\\documentclass[../main.tex]{subfiles}\n\\begin{document}x\\end{document}",
+            ),
+            (
+                "main.tex",
+                "\\documentclass{article}\n\\usepackage{fontspec}\n\\begin{document}\\end{document}",
+            ),
             ("refs.bib", "@article{a, title={x}}"),
             ("main.aux", "junk"),
             ("__MACOSX/._main.tex", "junk"),
@@ -367,14 +475,20 @@ mod tests {
     fn strips_wrapping_folder_and_blocks_traversal() {
         let d = tmp();
         let z = make_zip(&[
-            ("My_Paper/paper.tex", "% \\documentclass{fake}\n\\documentclass{article}\\begin{document}\\end{document}"),
+            (
+                "My_Paper/paper.tex",
+                "% \\documentclass{fake}\n\\documentclass{article}\\begin{document}\\end{document}",
+            ),
             ("My_Paper/img\\fig.png", "png"),
             ("My_Paper/.DS_Store", ""),
             ("My_Paper/../../evil.tex", "x"),
         ]);
         let r = import_zip(&z, &d).unwrap();
         assert!(d.join("paper.tex").exists());
-        assert!(d.join("img/fig.png").exists(), "windows separators are normalised");
+        assert!(
+            d.join("img/fig.png").exists(),
+            "windows separators are normalised"
+        );
         assert!(!d.parent().unwrap().join("evil.tex").exists());
         assert_eq!(r.files, 2);
         assert_eq!(detect(&d).main_file, "paper.tex");
@@ -384,11 +498,19 @@ mod tests {
     #[test]
     fn engine_detection_sources() {
         let d = tmp();
-        std::fs::write(d.join("main.tex"), "\\documentclass{article}\\begin{document}\\end{document}").unwrap();
+        std::fs::write(
+            d.join("main.tex"),
+            "\\documentclass{article}\\begin{document}\\end{document}",
+        )
+        .unwrap();
         assert_eq!(detect(&d).wanted, "pdflatex");
         std::fs::write(d.join("latexmkrc"), "$pdf_mode = 4; # lualatex\n").unwrap();
         assert_eq!(detect(&d).wanted, "lualatex");
-        std::fs::write(d.join("main.tex"), "% !TEX program = xelatex\n\\documentclass{article}").unwrap();
+        std::fs::write(
+            d.join("main.tex"),
+            "% !TEX program = xelatex\n\\documentclass{article}",
+        )
+        .unwrap();
         assert_eq!(detect(&d).wanted, "xelatex");
         std::fs::remove_dir_all(d).ok();
     }
@@ -399,8 +521,14 @@ mod tests {
         std::fs::create_dir_all(d.join("src")).unwrap();
         std::fs::write(d.join("src/main.typ"), "= Hi").unwrap();
         let det = detect(&d);
-        assert_eq!((det.main_file.as_str(), det.wanted.as_str()), ("src/main.typ", "typst"));
-        assert_eq!(choose_compiler("xelatex", &["pdflatex", "lualatex"]), "lualatex");
+        assert_eq!(
+            (det.main_file.as_str(), det.wanted.as_str()),
+            ("src/main.typ", "typst")
+        );
+        assert_eq!(
+            choose_compiler("xelatex", &["pdflatex", "lualatex"]),
+            "lualatex"
+        );
         assert_eq!(choose_compiler("pdflatex", &["pdflatex"]), "pdflatex");
         std::fs::remove_dir_all(d).ok();
     }
@@ -416,7 +544,9 @@ mod tests {
         std::fs::write(d.join(".gitignore"), "generated").unwrap();
         let z = export_zip(&d, |rel, _| rel == ".gitignore").unwrap();
         let mut a = zip::ZipArchive::new(std::io::Cursor::new(z)).unwrap();
-        let mut names: Vec<String> = (0..a.len()).map(|i| a.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        let mut names: Vec<String> = (0..a.len())
+            .map(|i| a.by_index(i).unwrap().name().unwrap().to_string())
+            .collect();
         names.sort();
         assert_eq!(names, vec!["main.tex", "sec/", "sec/a.tex"]);
         std::fs::remove_dir_all(d).ok();

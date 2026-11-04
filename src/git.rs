@@ -47,9 +47,17 @@ fn git_cmd(dir: &FsPath) -> Command {
 
 /// Runs git and returns stdout, failing with stderr on a non-zero exit.
 pub async fn git(dir: &FsPath, args: &[&str]) -> anyhow::Result<String> {
-    let out = git_cmd(dir).args(args).stdin(Stdio::null()).output().await?;
+    let out = git_cmd(dir)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .await?;
     if !out.status.success() {
-        anyhow::bail!("git {}: {}", args.first().unwrap_or(&""), String::from_utf8_lossy(&out.stderr).trim());
+        anyhow::bail!(
+            "git {}: {}",
+            args.first().unwrap_or(&""),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
@@ -78,9 +86,16 @@ pub async fn init_repo(dir: &FsPath) -> anyhow::Result<()> {
 
 /// Commits all working-tree changes. The caller must hold the project lock.
 /// Returns `true` if a commit was created.
-pub async fn commit_all(dir: &FsPath, room: Option<&Arc<Room>>, message: &str, actor: Option<&User>) -> anyhow::Result<bool> {
+pub async fn commit_all(
+    dir: &FsPath,
+    room: Option<&Arc<Room>>,
+    message: &str,
+    actor: Option<&User>,
+) -> anyhow::Result<bool> {
     if let Some(room) = room {
-        room.flush_locked().await.map_err(|e| anyhow::anyhow!(e.1))?;
+        room.flush_locked()
+            .await
+            .map_err(|e| anyhow::anyhow!(e.1))?;
     }
     git(dir, &["add", "-A"]).await?;
     let status = git(dir, &["status", "--porcelain"]).await?;
@@ -88,12 +103,15 @@ pub async fn commit_all(dir: &FsPath, room: Option<&Arc<Room>>, message: &str, a
         return Ok(false);
     }
     let mut editors = room.map(|r| r.take_editors()).unwrap_or_default();
-    if let Some(u) = actor {
-        if !editors.iter().any(|(_, e)| *e == u.email) {
-            editors.insert(0, (u.name.clone(), u.email.clone()));
-        }
+    if let Some(u) = actor
+        && !editors.iter().any(|(_, e)| *e == u.email)
+    {
+        editors.insert(0, (u.name.clone(), u.email.clone()));
     }
-    let (an, ae) = editors.first().cloned().unwrap_or((BOT_NAME.into(), BOT_EMAIL.into()));
+    let (an, ae) = editors
+        .first()
+        .cloned()
+        .unwrap_or((BOT_NAME.into(), BOT_EMAIL.into()));
     let mut msg = message.to_string();
     if editors.len() > 1 {
         msg.push_str("\n\n");
@@ -113,7 +131,12 @@ pub async fn commit_all(dir: &FsPath, room: Option<&Arc<Room>>, message: &str, a
     Ok(true)
 }
 
-async fn commit_pending(state: &SharedState, id: &str, message: &str, actor: Option<&User>) -> AppResult<bool> {
+async fn commit_pending(
+    state: &SharedState,
+    id: &str,
+    message: &str,
+    actor: Option<&User>,
+) -> AppResult<bool> {
     let room = state.hub.get(id);
     Ok(commit_all(&state.cfg.project_dir(id), room.as_ref(), message, actor).await?)
 }
@@ -123,11 +146,21 @@ async fn commit_pending(state: &SharedState, id: &str, message: &str, actor: Opt
 // ---------------------------------------------------------------------------------------------
 
 fn need_auth() -> Response {
-    (StatusCode::UNAUTHORIZED, [(header::WWW_AUTHENTICATE, "Basic realm=\"Lightleaf git\"")], "authentication required\n")
+    (
+        StatusCode::UNAUTHORIZED,
+        [(header::WWW_AUTHENTICATE, "Basic realm=\"Lightleaf git\"")],
+        "authentication required\n",
+    )
         .into_response()
 }
 
-async fn git_auth(state: &SharedState, headers: &HeaderMap, id: &str, min: Role) -> Result<User, Response> {
+#[allow(clippy::result_large_err)]
+async fn git_auth(
+    state: &SharedState,
+    headers: &HeaderMap,
+    id: &str,
+    min: Role,
+) -> Result<User, Response> {
     let user = match user_from_basic(state, headers).await {
         Ok(Some(u)) => u,
         Ok(None) => return Err(need_auth()),
@@ -135,7 +168,11 @@ async fn git_auth(state: &SharedState, headers: &HeaderMap, id: &str, min: Role)
     };
     match state.role(id, user.id).await {
         Ok(r) if r >= min => Ok(user),
-        Ok(_) => Err((StatusCode::FORBIDDEN, "you only have read access to this project\n").into_response()),
+        Ok(_) => Err((
+            StatusCode::FORBIDDEN,
+            "you only have read access to this project\n",
+        )
+            .into_response()),
         Err(_) => Err((StatusCode::NOT_FOUND, "repository not found\n").into_response()),
     }
 }
@@ -165,9 +202,19 @@ pub async fn info_refs(
     let service = match q.service.as_deref() {
         Some("git-upload-pack") => "upload-pack",
         Some("git-receive-pack") => "receive-pack",
-        _ => return (StatusCode::FORBIDDEN, "dumb http protocol is not supported\n").into_response(),
+        _ => {
+            return (
+                StatusCode::FORBIDDEN,
+                "dumb http protocol is not supported\n",
+            )
+                .into_response();
+        }
     };
-    let min = if service == "receive-pack" { Role::Editor } else { Role::Viewer };
+    let min = if service == "receive-pack" {
+        Role::Editor
+    } else {
+        Role::Viewer
+    };
     if let Err(r) = git_auth(&state, &headers, &id, min).await {
         return r;
     }
@@ -191,7 +238,10 @@ pub async fn info_refs(
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
     let mut body = Vec::new();
-    let is_v2 = headers.get("git-protocol").and_then(|v| v.to_str().ok()).is_some_and(|v| v.contains("version=2"));
+    let is_v2 = headers
+        .get("git-protocol")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("version=2"));
     if !is_v2 {
         body.extend(pkt_line(&format!("# service=git-{service}\n")));
         body.extend_from_slice(b"0000");
@@ -199,7 +249,10 @@ pub async fn info_refs(
     body.extend(out);
     (
         [
-            (header::CONTENT_TYPE, format!("application/x-git-{service}-advertisement")),
+            (
+                header::CONTENT_TYPE,
+                format!("application/x-git-{service}-advertisement"),
+            ),
             (header::CACHE_CONTROL, "no-cache".to_string()),
         ],
         body,
@@ -208,7 +261,11 @@ pub async fn info_refs(
 }
 
 fn decode_body(headers: &HeaderMap, body: Bytes) -> std::io::Result<Vec<u8>> {
-    if headers.get(header::CONTENT_ENCODING).and_then(|v| v.to_str().ok()) == Some("gzip") {
+    if headers
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        == Some("gzip")
+    {
         let mut out = Vec::new();
         flate2::read::GzDecoder::new(&body[..]).read_to_end(&mut out)?;
         Ok(out)
@@ -227,9 +284,14 @@ pub async fn upload_pack(
     if let Err(r) = git_auth(&state, &headers, &id, Role::Viewer).await {
         return r;
     }
-    let Ok(input) = decode_body(&headers, body) else { return StatusCode::BAD_REQUEST.into_response() };
+    let Ok(input) = decode_body(&headers, body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     let mut cmd = git_cmd(&state.cfg.project_dir(&id));
-    cmd.args(["upload-pack", "--stateless-rpc", "."]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.args(["upload-pack", "--stateless-rpc", "."])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     if let Some(p) = headers.get("git-protocol").and_then(|v| v.to_str().ok()) {
         cmd.env("GIT_PROTOCOL", p);
     }
@@ -247,7 +309,10 @@ pub async fn upload_pack(
         let _ = child.wait().await;
     });
     (
-        [(header::CONTENT_TYPE, "application/x-git-upload-pack-result"), (header::CACHE_CONTROL, "no-cache")],
+        [
+            (header::CONTENT_TYPE, "application/x-git-upload-pack-result"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
         Body::from_stream(ReaderStream::new(stdout)),
     )
         .into_response()
@@ -264,7 +329,9 @@ pub async fn receive_pack(
         Ok(u) => u,
         Err(r) => return r,
     };
-    let Ok(input) = decode_body(&headers, body) else { return StatusCode::BAD_REQUEST.into_response() };
+    let Ok(input) = decode_body(&headers, body) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     let lock = state.project_lock(&id);
     let _g = lock.lock().await;
     // The working tree must be clean for `updateInstead` to accept the push.
@@ -273,7 +340,10 @@ pub async fn receive_pack(
     }
     let dir = state.cfg.project_dir(&id);
     let mut cmd = git_cmd(&dir);
-    cmd.args(["receive-pack", "--stateless-rpc", "."]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.args(["receive-pack", "--stateless-rpc", "."])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -292,7 +362,16 @@ pub async fn receive_pack(
         room.reload_from_disk().await;
     }
     state.touch_project(&id).await;
-    ([(header::CONTENT_TYPE, "application/x-git-receive-pack-result"), (header::CACHE_CONTROL, "no-cache")], out.stdout)
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/x-git-receive-pack-result",
+            ),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        out.stdout,
+    )
         .into_response()
 }
 
@@ -308,12 +387,25 @@ fn valid_sha(s: &str) -> AppResult<()> {
     }
 }
 
-pub async fn history(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<serde_json::Value>> {
+pub async fn history(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
     let dir = state.cfg.project_dir(&id);
-    let log = git(&dir, &["log", "-n", "300", "--shortstat", "--format=%x1e%H%x1f%an%x1f%ae%x1f%at%x1f%s"])
-        .await
-        .unwrap_or_default();
+    let log = git(
+        &dir,
+        &[
+            "log",
+            "-n",
+            "300",
+            "--shortstat",
+            "--format=%x1e%H%x1f%an%x1f%ae%x1f%at%x1f%s",
+        ],
+    )
+    .await
+    .unwrap_or_default();
     let commits: Vec<_> = log
         .split('\x1e')
         .filter(|s| !s.trim().is_empty())
@@ -336,7 +428,11 @@ pub async fn history(State(state): State<SharedState>, user: User, Path(id): Pat
         if let Some(r) = &room {
             r.flush_locked().await?;
         }
-        !git(&dir, &["status", "--porcelain"]).await.unwrap_or_default().trim().is_empty()
+        !git(&dir, &["status", "--porcelain"])
+            .await
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
     };
     Ok(Json(json!({ "commits": commits, "pending": pending })))
 }
@@ -353,7 +449,10 @@ pub async fn snapshot(
     Json(req): Json<SnapshotReq>,
 ) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Editor).await?;
-    let msg = req.message.filter(|m| !m.trim().is_empty()).unwrap_or_else(|| "Snapshot from web editor".into());
+    let msg = req
+        .message
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| "Snapshot from web editor".into());
     let lock = state.project_lock(&id);
     let _g = lock.lock().await;
     let created = commit_pending(&state, &id, msg.trim(), Some(&user)).await?;
@@ -368,7 +467,12 @@ pub async fn show_commit(
     state.require(&id, user.id, Role::Viewer).await?;
     valid_sha(&sha)?;
     let dir = state.cfg.project_dir(&id);
-    let numstat = git(&dir, &["show", "--numstat", "--format=", "--no-renames", &sha]).await.map_err(|_| AppError::not_found())?;
+    let numstat = git(
+        &dir,
+        &["show", "--numstat", "--format=", "--no-renames", &sha],
+    )
+    .await
+    .map_err(|_| AppError::not_found())?;
     let files: Vec<_> = numstat
         .lines()
         .filter_map(|l| {
@@ -377,7 +481,18 @@ pub async fn show_commit(
             Some(json!({ "path": f, "added": a.parse::<i64>().ok(), "removed": d.parse::<i64>().ok() }))
         })
         .collect();
-    let mut patch = git(&dir, &["show", "--format=", "--no-renames", "--patch", "--no-color", &sha]).await?;
+    let mut patch = git(
+        &dir,
+        &[
+            "show",
+            "--format=",
+            "--no-renames",
+            "--patch",
+            "--no-color",
+            &sha,
+        ],
+    )
+    .await?;
     const MAX: usize = 512 * 1024;
     if patch.len() > MAX {
         let mut cut = MAX;
@@ -387,8 +502,12 @@ pub async fn show_commit(
         patch.truncate(cut);
         patch.push_str("\n... diff truncated ...\n");
     }
-    let body = git(&dir, &["show", "-s", "--format=%B", &sha]).await.unwrap_or_default();
-    Ok(Json(json!({ "sha": sha, "files": files, "patch": patch, "message": body.trim() })))
+    let body = git(&dir, &["show", "-s", "--format=%B", &sha])
+        .await
+        .unwrap_or_default();
+    Ok(Json(
+        json!({ "sha": sha, "files": files, "patch": patch, "message": body.trim() }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -412,12 +531,28 @@ pub async fn restore_file(
     match req.path.as_deref().filter(|p| !p.is_empty()) {
         Some(p) => {
             let rel = clean_rel_path(p)?;
-            git(&dir, &["checkout", &sha, "--", &rel]).await.map_err(|e| AppError::bad(e.to_string()))?;
-            commit_all(&dir, None, &format!("Restore {rel} from {short}"), Some(&user)).await?;
+            git(&dir, &["checkout", &sha, "--", &rel])
+                .await
+                .map_err(|e| AppError::bad(e.to_string()))?;
+            commit_all(
+                &dir,
+                None,
+                &format!("Restore {rel} from {short}"),
+                Some(&user),
+            )
+            .await?;
         }
         None => {
-            git(&dir, &["read-tree", "-u", "--reset", &sha]).await.map_err(|e| AppError::bad(e.to_string()))?;
-            commit_all(&dir, None, &format!("Restore project to {short}"), Some(&user)).await?;
+            git(&dir, &["read-tree", "-u", "--reset", &sha])
+                .await
+                .map_err(|e| AppError::bad(e.to_string()))?;
+            commit_all(
+                &dir,
+                None,
+                &format!("Restore project to {short}"),
+                Some(&user),
+            )
+            .await?;
         }
     }
     if let Some(room) = state.hub.get(&id) {
@@ -437,11 +572,19 @@ fn mask_url(url: &str) -> String {
     }
 }
 
-pub async fn get_remote(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<serde_json::Value>> {
+pub async fn get_remote(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
     let dir = state.cfg.project_dir(&id);
-    let url = git(&dir, &["config", "--get", "remote.origin.url"]).await.unwrap_or_default();
-    let branch = git(&dir, &["config", "--get", "lightleaf.remotebranch"]).await.unwrap_or_default();
+    let url = git(&dir, &["config", "--get", "remote.origin.url"])
+        .await
+        .unwrap_or_default();
+    let branch = git(&dir, &["config", "--get", "lightleaf.remotebranch"])
+        .await
+        .unwrap_or_default();
     Ok(Json(json!({
         "url": if url.trim().is_empty() { None } else { Some(mask_url(url.trim())) },
         "branch": if branch.trim().is_empty() { "main".to_string() } else { branch.trim().to_string() },
@@ -466,12 +609,15 @@ pub async fn set_remote(
     let _ = git(&dir, &["remote", "remove", "origin"]).await;
     if !url.is_empty() {
         if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Err(AppError::bad("only http(s) remotes are supported, e.g. https://<token>@github.com/user/repo.git"));
+            return Err(AppError::bad(
+                "only http(s) remotes are supported, e.g. https://<token>@github.com/user/repo.git",
+            ));
         }
         git(&dir, &["remote", "add", "origin", url]).await?;
     }
     let branch = req.branch.unwrap_or_else(|| "main".into());
-    if branch.is_empty() || branch.starts_with('-') || branch.contains("..") || branch.contains(' ') {
+    if branch.is_empty() || branch.starts_with('-') || branch.contains("..") || branch.contains(' ')
+    {
         return Err(AppError::bad("invalid branch name"));
     }
     git(&dir, &["config", "lightleaf.remotebranch", &branch]).await?;
@@ -479,25 +625,51 @@ pub async fn set_remote(
 }
 
 async fn remote_branch(dir: &FsPath) -> AppResult<String> {
-    let url = git(dir, &["config", "--get", "remote.origin.url"]).await.unwrap_or_default();
+    let url = git(dir, &["config", "--get", "remote.origin.url"])
+        .await
+        .unwrap_or_default();
     if url.trim().is_empty() {
         return Err(AppError::bad("no remote configured"));
     }
-    let b = git(dir, &["config", "--get", "lightleaf.remotebranch"]).await.unwrap_or_default();
-    Ok(if b.trim().is_empty() { "main".into() } else { b.trim().to_string() })
+    let b = git(dir, &["config", "--get", "lightleaf.remotebranch"])
+        .await
+        .unwrap_or_default();
+    Ok(if b.trim().is_empty() {
+        "main".into()
+    } else {
+        b.trim().to_string()
+    })
 }
 
-pub async fn remote_pull(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<serde_json::Value>> {
+pub async fn remote_pull(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Editor).await?;
     let dir = state.cfg.project_dir(&id);
     let branch = remote_branch(&dir).await?;
     let lock = state.project_lock(&id);
     let _g = lock.lock().await;
     commit_pending(&state, &id, "Update from web editor", Some(&user)).await?;
-    let res = git_timeout(&dir, &["pull", "--no-rebase", "--no-edit", "--allow-unrelated-histories", "origin", &branch], 120).await;
+    let res = git_timeout(
+        &dir,
+        &[
+            "pull",
+            "--no-rebase",
+            "--no-edit",
+            "--allow-unrelated-histories",
+            "origin",
+            &branch,
+        ],
+        120,
+    )
+    .await;
     if let Err(e) = res {
         let _ = git(&dir, &["merge", "--abort"]).await;
-        return Err(AppError::conflict(format!("pull failed (merge conflicts are not resolved automatically): {e}")));
+        return Err(AppError::conflict(format!(
+            "pull failed (merge conflicts are not resolved automatically): {e}"
+        )));
     }
     if let Some(room) = state.hub.get(&id) {
         room.reload_from_disk().await;
@@ -506,15 +678,23 @@ pub async fn remote_pull(State(state): State<SharedState>, user: User, Path(id):
     Ok(Json(json!({ "ok": true })))
 }
 
-pub async fn remote_push(State(state): State<SharedState>, user: User, Path(id): Path<String>) -> AppResult<Json<serde_json::Value>> {
+pub async fn remote_push(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Editor).await?;
     let dir = state.cfg.project_dir(&id);
     let branch = remote_branch(&dir).await?;
     let lock = state.project_lock(&id);
     let _g = lock.lock().await;
     commit_pending(&state, &id, "Update from web editor", Some(&user)).await?;
-    git_timeout(&dir, &["push", "origin", &format!("HEAD:refs/heads/{branch}")], 120)
-        .await
-        .map_err(|e| AppError::conflict(format!("push failed (try pulling first): {e}")))?;
+    git_timeout(
+        &dir,
+        &["push", "origin", &format!("HEAD:refs/heads/{branch}")],
+        120,
+    )
+    .await
+    .map_err(|e| AppError::conflict(format!("push failed (try pulling first): {e}")))?;
     Ok(Json(json!({ "ok": true, "at": now() })))
 }

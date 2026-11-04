@@ -2,6 +2,12 @@
 name = "lightleaf"
 version = "0.1.0"
 edition = "2024"
+description = "Fast, lightweight, self-hosted collaborative LaTeX & Typst editor with git integration"
+license = "MIT"
+repository = "https://github.com/Flecart/lightleaf"
+readme = "README.md"
+keywords = ["latex", "typst", "overleaf", "collaborative", "editor"]
+categories = ["web-programming", "text-editors"]
 
 [dependencies]
 anyhow = "1.0.104"

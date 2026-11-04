@@ -9,5 +9,8 @@ jobs:
         with: { node-version: 22 }
       - run: cd frontend && npm ci && npm run build
       - uses: dtolnay/rust-toolchain@stable
+        with: { components: 'rustfmt, clippy' }
+      - run: cargo fmt --check
+      - run: cargo clippy --release -- -D warnings
       - run: cargo test --release
       - run: cargo build --release

@@ -27,7 +27,8 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("lightleaf=info,tower_http=warn")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("lightleaf=info,tower_http=warn")),
         )
         .init();
 
@@ -45,26 +46,48 @@ async fn main() -> anyhow::Result<()> {
     collab::spawn_flusher(state.clone());
 
     let api = Router::new()
-        .route("/health", get(|| async { axum::Json(serde_json::json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") })) }))
+        .route(
+            "/health",
+            get(|| async {
+                axum::Json(serde_json::json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") }))
+            }),
+        )
         .route("/config", get(auth::public_config))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/me", get(auth::me))
         .route("/me/password", post(auth::change_password))
-        .route("/me/tokens", get(auth::list_tokens).post(auth::create_token))
+        .route(
+            "/me/tokens",
+            get(auth::list_tokens).post(auth::create_token),
+        )
         .route("/me/tokens/{id}", delete(auth::delete_token))
-        .route("/admin/users", get(auth::admin_list_users).post(auth::admin_create_user))
+        .route(
+            "/admin/users",
+            get(auth::admin_list_users).post(auth::admin_create_user),
+        )
         .route("/admin/users/{id}", delete(auth::admin_delete_user))
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/import", post(projects::import_zip))
-        .route("/projects/{id}", get(projects::get).patch(projects::update).delete(projects::remove))
+        .route(
+            "/projects/{id}",
+            get(projects::get)
+                .patch(projects::update)
+                .delete(projects::remove),
+        )
         .route("/projects/{id}/copy", post(projects::copy))
         .route("/projects/{id}/members", post(projects::add_member))
-        .route("/projects/{id}/members/{uid}", delete(projects::remove_member))
+        .route(
+            "/projects/{id}/members/{uid}",
+            delete(projects::remove_member),
+        )
         .route("/projects/{id}/chat", get(projects::chat_history))
         .route("/projects/{id}/tree", get(files::tree))
-        .route("/projects/{id}/file", get(files::read).delete(files::remove))
+        .route(
+            "/projects/{id}/file",
+            get(files::read).delete(files::remove),
+        )
         .route("/projects/{id}/files", post(files::create))
         .route("/projects/{id}/rename", post(files::rename))
         .route("/projects/{id}/upload", post(files::upload))
@@ -72,11 +95,23 @@ async fn main() -> anyhow::Result<()> {
         .route("/projects/{id}/compile", post(compile::compile))
         .route("/projects/{id}/output/{name}", get(compile::output))
         .route("/projects/{id}/synctex/pdf", get(compile::synctex_from_pdf))
-        .route("/projects/{id}/synctex/code", get(compile::synctex_from_code))
-        .route("/projects/{id}/history", get(git::history).post(git::snapshot))
+        .route(
+            "/projects/{id}/synctex/code",
+            get(compile::synctex_from_code),
+        )
+        .route(
+            "/projects/{id}/history",
+            get(git::history).post(git::snapshot),
+        )
         .route("/projects/{id}/history/{sha}", get(git::show_commit))
-        .route("/projects/{id}/history/{sha}/restore", post(git::restore_file))
-        .route("/projects/{id}/remote", get(git::get_remote).post(git::set_remote))
+        .route(
+            "/projects/{id}/history/{sha}/restore",
+            post(git::restore_file),
+        )
+        .route(
+            "/projects/{id}/remote",
+            get(git::get_remote).post(git::set_remote),
+        )
         .route("/projects/{id}/remote/pull", post(git::remote_pull))
         .route("/projects/{id}/remote/push", post(git::remote_push))
         .route("/projects/{id}/ws", get(collab::ws_handler))
@@ -98,7 +133,9 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind).await?;
     tracing::info!("Lightleaf listening on http://{}", cfg.bind);
-    axum::serve(listener, app).with_graceful_shutdown(shutdown()).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown())
+        .await?;
     collab::flush_all(&state).await;
     Ok(())
 }
@@ -109,7 +146,8 @@ async fn shutdown() {
     };
     #[cfg(unix)]
     let term = async {
-        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             s.recv().await;
         }
     };
