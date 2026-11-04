@@ -55,6 +55,7 @@ docker compose --profile https up -d --build
 This starts a bundled Caddy proxy on ports 80/443 that fetches Let's Encrypt certificates and proxies WebSockets.
 
 **What the image contains:** Lightleaf, git, Typst, and TeX Live (recommended + extra + science + fonts + XeLaTeX/LuaLaTeX + biber + latexmk).
+The default image is about 2 GB. Add `texlive-fonts-extra` to `TEX_PACKAGES` if you need the big font collection.
 For a much smaller image, pick fewer TeX packages:
 
 ```bash

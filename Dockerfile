@@ -27,7 +27,7 @@ RUN cargo build --release && cp target/release/lightleaf /lightleaf
 FROM debian:bookworm-slim
 ARG TARGETARCH
 ARG TYPST_VERSION=0.13.1
-ARG TEX_PACKAGES="texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-fonts-extra texlive-science texlive-xetex texlive-luatex texlive-bibtex-extra texlive-lang-european biber latexmk"
+ARG TEX_PACKAGES="texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-science texlive-xetex texlive-luatex texlive-bibtex-extra texlive-lang-european biber latexmk"
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates git tini curl xz-utils perl fontconfig ${TEX_PACKAGES} \
@@ -48,7 +48,7 @@ ENV LIGHTLEAF_DATA=/data \
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD ["sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+  CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /api/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
 # tini reaps orphaned compiler processes (latexmk/biber children) and forwards signals.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["lightleaf"]
