@@ -1,0 +1,36 @@
+[package]
+name = "lightleaf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+argon2 = "0.6.0"
+axum = { version = "0.8", features = ["ws", "multipart", "macros"] }
+base64 = "0.23.1"
+flate2 = "1.1.10"
+futures-util = "0.3.34"
+hex = "0.4.3"
+mime_guess = "2.0.5"
+rand = "0.8"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+rust-embed = "8.13.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+time = { version = "0.3.55", features = ["formatting"] }
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
+tower-http = { version = "0.7.1", features = ["compression-gzip", "compression-br", "trace", "fs", "set-header"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+uuid = { version = "1.29.0", features = ["v4"] }
+yrs = "0.28"
+zip = { version = "9.3.0", default-features = false, features = ["deflate"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -1,0 +1,46 @@
+# Lightleaf deployment.
+#
+#   cp .env.example .env        # adjust settings
+#   docker compose up -d        # http://localhost:8080
+#
+# With automatic HTTPS (set LIGHTLEAF_DOMAIN in .env and point DNS at this host):
+#   docker compose --profile https up -d
+services:
+  lightleaf:
+    build: .
+    image: ${LIGHTLEAF_IMAGE:-lightleaf:latest}
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${LIGHTLEAF_PORT:-8080}:8080"
+    volumes:
+      - lightleaf-data:/data
+    # Keep resource use predictable on small servers.
+    mem_limit: ${LIGHTLEAF_MEMORY:-1g}
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    tmpfs:
+      - /tmp
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: [https]
+    restart: unless-stopped
+    depends_on: [lightleaf]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      LIGHTLEAF_DOMAIN: ${LIGHTLEAF_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  lightleaf-data:
+  caddy-data:
+  caddy-config:

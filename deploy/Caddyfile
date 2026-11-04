@@ -1,0 +1,5 @@
+{$LIGHTLEAF_DOMAIN} {
+	encode zstd gzip
+	# WebSockets are proxied automatically.
+	reverse_proxy lightleaf:8080
+}
