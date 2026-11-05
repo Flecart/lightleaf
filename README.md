@@ -46,10 +46,18 @@ cp .env.example .env              # adjust settings
 docker compose up -d --build      # → http://localhost:8080
 ```
 
-The first account you register becomes the admin (or set `LIGHTLEAF_ADMIN_EMAIL`/`LIGHTLEAF_ADMIN_PASSWORD`).
+Then create your administrator account **on the server** (sign-up is closed by default, and the admin account can never be
+claimed over the network):
 
-**HTTPS with automatic certificates.** Point DNS at the server, set `LIGHTLEAF_DOMAIN` and `LIGHTLEAF_SECURE_COOKIES=true`
-in `.env`, then run:
+```bash
+docker compose exec lightleaf lightleaf user add --admin you@example.com   # prints a random password
+```
+
+Alternatively set `LIGHTLEAF_ADMIN_EMAIL`/`LIGHTLEAF_ADMIN_PASSWORD` in `.env`. See [Accounts and sign-up](#accounts-and-sign-up).
+
+**HTTPS with automatic certificates.** Point DNS at the server and set in `.env`:
+`LIGHTLEAF_DOMAIN`, `LIGHTLEAF_SECURE_COOKIES=true`, `LIGHTLEAF_TRUST_PROXY=true` and `LIGHTLEAF_PORT=127.0.0.1:8080`
+(so the app is only reachable through the proxy), then run:
 
 ```bash
 docker compose --profile https up -d --build
@@ -107,15 +115,47 @@ All configuration is done with environment variables:
 |---|---|---|
 | `LIGHTLEAF_BIND` | `0.0.0.0:8080` | Listen address |
 | `LIGHTLEAF_DATA` | `./data` | Data directory (SQLite DB, project repos, build dirs) |
-| `LIGHTLEAF_SIGNUP` | `open` | `closed` = only admins can create accounts (the first account can always be created) |
+| `LIGHTLEAF_SIGNUP` | `closed` | `closed` = no self-registration (admins create accounts) · `local` = self-registration only from the server machine itself · `open` = anyone can register |
 | `LIGHTLEAF_ADMIN_EMAIL` / `LIGHTLEAF_ADMIN_PASSWORD` | – | Create an admin account on start-up if it doesn't exist |
 | `LIGHTLEAF_MAX_COMPILES` | `min(cpus, 4)` | Maximum concurrent compiles (the rest are queued) |
 | `LIGHTLEAF_COMPILE_TIMEOUT` | `90` | Seconds before a compile is killed |
 | `LIGHTLEAF_COMPILE_WRAPPER` | – | Command prefix used to sandbox compilers, e.g. `firejail --quiet --net=none` |
 | `LIGHTLEAF_MAX_UPLOAD_MB` | `50` | Max upload size |
-| `LIGHTLEAF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS |
+| `LIGHTLEAF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS (also enables HSTS) |
+| `LIGHTLEAF_TRUST_PROXY` | `false` | Use the client IP from `X-Forwarded-For` (set to `true` **only** behind your own reverse proxy) |
+| `LIGHTLEAF_SESSION_DAYS` | `30` | Maximum session lifetime |
+| `LIGHTLEAF_SESSION_IDLE_DAYS` | `14` | Sessions unused for this long are logged out |
 | `LIGHTLEAF_SITE_NAME` | `Lightleaf` | Name shown in the UI |
 | `RUST_LOG` | `lightleaf=info` | Log level |
+
+## Accounts and sign-up
+
+Who can create an account is set with `LIGHTLEAF_SIGNUP`:
+
+| Mode | Who can register in the browser |
+|---|---|
+| `closed` (default) | Nobody. Admins create accounts in **Admin** or with the CLI below. |
+| `local` | Only requests made on the server machine itself, e.g. through an SSH tunnel: `ssh -L 8080:localhost:8080 server`, then open `http://localhost:8080`. A request counts as local when it comes from a loopback address, carries no proxy headers (`X-Forwarded-For`, `Forwarded`, …) and is addressed to `localhost`. A reverse proxy on the same machine must therefore add `X-Forwarded-For` (Caddy and Traefik always do; with nginx add `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). In Docker, requests never look local; use the CLI. |
+| `open` | Anyone who can reach the server. |
+
+The **first** account becomes the administrator, so it can only be created from the server (CLI, `LIGHTLEAF_ADMIN_*`
+variables, or a local request), never by whoever reaches a fresh install first.
+
+### Command-line account management
+
+Run on the server (in Docker, prefix with `docker compose exec lightleaf`). It reads the same `LIGHTLEAF_DATA` as the
+server and is safe to use while the server is running.
+
+```bash
+lightleaf user add <email> [--name NAME] [--admin] [--password-stdin]   # create an account
+lightleaf user passwd <email> [--password-stdin]                        # reset a password (logs the user out everywhere)
+lightleaf user admin <email> on|off                                     # grant/remove admin rights
+lightleaf user logout <email>                                           # end all of the user's sessions
+lightleaf user list                                                     # list accounts
+```
+
+Without `--password-stdin` a random 20-character password is generated and printed. With it, the password is read from
+standard input: `echo 'correct horse battery' | lightleaf user add bob@example.com --password-stdin`.
 
 ## Using git
 
@@ -183,13 +223,17 @@ cargo test
 
 - TeX runs with restricted shell escape (`shell_escape=p`) and paranoid file access (`openin_any=p`, `openout_any=p`), so pdfLaTeX/XeLaTeX documents cannot read or write files outside the project. **LuaLaTeX is the exception:** its Lua interpreter can read files on its own, so the read restriction does not apply to it. Typst is sandboxed to the project root.
 - For untrusted users, also sandbox the compilers with `LIGHTLEAF_COMPILE_WRAPPER` (for example `firejail` or `bwrap` with networking disabled), or run the container with a read-only root filesystem.
-- Passwords are hashed with Argon2id. Session and git tokens are stored only as SHA-256 hashes.
+- Passwords are hashed with Argon2id (at most 4 hashes run at once, so a login flood cannot exhaust memory). Session and git tokens are stored only as SHA-256 hashes.
+- Logins are rate limited: 10 failed attempts per account per 15 minutes, and 30 failed logins or registrations per client IP per 10 minutes. Unknown emails take as long to reject as wrong passwords, so accounts cannot be discovered by timing.
+- Sessions expire after `LIGHTLEAF_SESSION_DAYS`, or earlier after `LIGHTLEAF_SESSION_IDLE_DAYS` without use. Users can see and revoke their sessions in **Account settings**. Changing or resetting a password logs out every other session.
+- State-changing API requests from other sites are rejected (`Origin` / `Sec-Fetch-Site` checks on top of `SameSite=Lax` cookies). The app is served with a strict Content-Security-Policy, `X-Frame-Options`, `nosniff` and, over HTTPS, HSTS.
+- Uploaded files are served sandboxed (`CSP: sandbox`), and HTML/XML/JS uploads are served as plain text, so a collaborator cannot run scripts in your session by uploading a malicious file.
 - Repositories check out symlinks as plain files (`core.symlinks=false`), and git hooks are disabled.
 - External remotes are limited to `http(s)://`.
 
 ## Roadmap ideas
 
-Track changes & comments · rich-text mode · link sharing · OIDC/LDAP login · per-project compile images · Typst live preview (incremental) · word count · vim/emacs keybindings.
+Track changes & comments · rich-text mode · link sharing · invite links · OIDC/LDAP login · two-factor authentication · per-project compile images · Typst live preview (incremental) · word count · vim/emacs keybindings.
 
 ## Contributing
 

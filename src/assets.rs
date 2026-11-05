@@ -6,6 +6,12 @@ use axum::{
 };
 use rust_embed::RustEmbed;
 
+/// Content-Security-Policy for the single-page app: only our own scripts, no plugins, and no
+/// framing by other sites. Inline styles are needed by CodeMirror.
+const APP_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; \
+    img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'self' blob:; \
+    frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'";
+
 #[derive(RustEmbed)]
 #[folder = "frontend/dist/"]
 struct Assets;
@@ -23,17 +29,25 @@ pub async fn static_handler(uri: Uri) -> Response {
         },
     };
     let mime = mime_guess::from_path(&name).first_or_octet_stream();
+    let html = name.ends_with(".html");
     let cache = if name.starts_with("assets/") {
         "public, max-age=31536000, immutable"
     } else {
         "no-cache"
     };
-    (
+    let mut res = (
         [
             (header::CONTENT_TYPE, mime.as_ref()),
             (header::CACHE_CONTROL, cache),
         ],
         file.data,
     )
-        .into_response()
+        .into_response();
+    if html {
+        res.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static(APP_CSP),
+        );
+    }
+    res
 }

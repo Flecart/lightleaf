@@ -3,6 +3,22 @@ import { del, get, post, PublicConfig, timeAgo, User } from '../api';
 import { Icon, toast, TopBar } from '../ui';
 import { UserMenu } from './UserMenu';
 
+interface Session {
+  id: number;
+  createdAt: number;
+  lastSeen: number;
+  ip: string;
+  userAgent: string;
+  current: boolean;
+}
+
+/** A short, readable description of a browser from its user-agent string. */
+function describeAgent(ua: string): string {
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  return [browser, os].filter(Boolean).join(' on ') || ua || 'Unknown browser';
+}
+
 interface Token {
   id: number;
   name: string;
@@ -18,9 +34,12 @@ export function SettingsPage(props: { user: User; config: PublicConfig; onLogout
   const [pw, setPw] = useState('');
   const [theme, setTheme] = useState(localStorage.getItem('ll-theme') ?? 'auto');
 
+  const [sessions, setSessions] = useState<Session[]>([]);
   const load = () => get<Token[]>('/api/me/tokens').then(setTokens);
+  const loadSessions = () => get<Session[]>('/api/me/sessions').then(setSessions);
   useEffect(() => {
     load();
+    loadSessions();
   }, []);
 
   const create = async (e: Event) => {
@@ -35,9 +54,10 @@ export function SettingsPage(props: { user: User; config: PublicConfig; onLogout
     e.preventDefault();
     try {
       await post('/api/me/password', { current: cur, new: pw });
-      toast('Password updated', 'success');
+      toast('Password updated — other browsers were logged out', 'success');
       setCur('');
       setPw('');
+      loadSessions();
     } catch (err: any) {
       toast(err.message, 'error');
     }
@@ -106,10 +126,42 @@ export function SettingsPage(props: { user: User; config: PublicConfig; onLogout
         </section>
 
         <section class="card">
+          <h2><Icon name="shield" /> Active sessions</h2>
+          <p class="muted">Browsers where you are logged in. Inactive sessions are logged out automatically.</p>
+          <table class="simple-table">
+            <thead><tr><th>Browser</th><th>IP address</th><th>Signed in</th><th>Last active</th><th /></tr></thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id}>
+                  <td title={s.userAgent}>{describeAgent(s.userAgent)} {s.current && <span class="badge">this browser</span>}</td>
+                  <td class="muted">{s.ip || '–'}</td>
+                  <td class="muted">{timeAgo(s.createdAt)}</td>
+                  <td class="muted">{timeAgo(s.lastSeen)}</td>
+                  <td class="right">
+                    {!s.current && (
+                      <button class="icon-btn danger" title="Log out this session" onClick={async () => { await del(`/api/me/sessions/${s.id}`); loadSessions(); }}>
+                        <Icon name="logout" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {sessions.length > 1 && (
+            <div>
+              <button class="btn" onClick={async () => { await del('/api/me/sessions'); toast('Logged out other sessions', 'success'); loadSessions(); }}>
+                Log out all other sessions
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section class="card">
           <h2><Icon name="key" /> Change password</h2>
           <form class="stack narrow" onSubmit={changePw}>
-            <input type="password" placeholder="Current password" required value={cur} onInput={(e) => setCur(e.currentTarget.value)} />
-            <input type="password" placeholder="New password (min. 8 characters)" minLength={8} required value={pw} onInput={(e) => setPw(e.currentTarget.value)} />
+            <input type="password" autoComplete="current-password" placeholder="Current password" required value={cur} onInput={(e) => setCur(e.currentTarget.value)} />
+            <input type="password" autoComplete="new-password" placeholder="New password (min. 8 characters)" minLength={8} required value={pw} onInput={(e) => setPw(e.currentTarget.value)} />
             <div><button class="btn primary">Update password</button></div>
           </form>
         </section>

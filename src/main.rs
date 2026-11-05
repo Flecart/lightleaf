@@ -2,6 +2,7 @@
 
 mod assets;
 mod auth;
+mod cli;
 mod collab;
 mod compile;
 mod config;
@@ -11,20 +12,34 @@ mod files;
 mod git;
 mod overleaf;
 mod projects;
+mod security;
 mod state;
 mod util;
 
 use axum::{
     Router,
     extract::DefaultBodyLimit,
+    http::{HeaderName, HeaderValue, header},
+    middleware,
     routing::{delete, get, post},
 };
-use std::sync::Arc;
-use tower_http::compression::CompressionLayer;
+use std::{net::SocketAddr, sync::Arc};
+use tower_http::{compression::CompressionLayer, set_header::SetResponseHeaderLayer};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().map(String::as_str);
+    if matches!(command, Some("help" | "--help" | "-h")) {
+        print!("{}", cli::USAGE);
+        return Ok(());
+    }
+    if matches!(command, Some("--version" | "-V")) {
+        println!("lightleaf {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -37,6 +52,12 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(cfg.build_dir())?;
     let conn = db::open(&cfg.data_dir.join("lightleaf.db"))?;
     let state = Arc::new(state::AppState::new(cfg.clone(), conn));
+
+    if let Some(c) = command
+        && c != "serve"
+    {
+        return cli::run(&state, &args).await;
+    }
 
     if let Some((email, password)) = cfg.bootstrap_admin.clone() {
         auth::bootstrap_admin(&state, &email, &password).await?;
@@ -64,10 +85,22 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/me/tokens/{id}", delete(auth::delete_token))
         .route(
+            "/me/sessions",
+            get(auth::list_sessions).delete(auth::delete_other_sessions),
+        )
+        .route("/me/sessions/{id}", delete(auth::delete_session))
+        .route(
             "/admin/users",
             get(auth::admin_list_users).post(auth::admin_create_user),
         )
-        .route("/admin/users/{id}", delete(auth::admin_delete_user))
+        .route(
+            "/admin/users/{id}",
+            delete(auth::admin_delete_user).patch(auth::admin_update_user),
+        )
+        .route(
+            "/admin/users/{id}/password",
+            post(auth::admin_reset_password),
+        )
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/import", post(projects::import_zip))
         .route(
@@ -115,7 +148,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/projects/{id}/remote/pull", post(git::remote_pull))
         .route("/projects/{id}/remote/push", post(git::remote_push))
         .route("/projects/{id}/ws", get(collab::ws_handler))
-        .layer(DefaultBodyLimit::max(cfg.max_upload_bytes));
+        .layer(DefaultBodyLimit::max(cfg.max_upload_bytes))
+        .layer(middleware::from_fn(security::csrf_guard));
 
     // Git smart-HTTP endpoints, compatible with `git clone http://host/git/<project-id>`.
     let git_routes = Router::new()
@@ -129,15 +163,35 @@ async fn main() -> anyhow::Result<()> {
         .nest("/git", git_routes)
         .fallback(assets::static_handler)
         .layer(CompressionLayer::new())
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            security::hsts,
+        ))
+        .layer(header_layer(header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
+        .layer(header_layer(header::X_FRAME_OPTIONS, "SAMEORIGIN"))
+        .layer(header_layer(header::REFERRER_POLICY, "same-origin"))
         .with_state(state.clone());
+
+    if cfg.signup == config::Signup::Open {
+        tracing::warn!(
+            "LIGHTLEAF_SIGNUP=open: anyone who can reach this server can create an account"
+        );
+    }
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind).await?;
     tracing::info!("Lightleaf listening on http://{}", cfg.bind);
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await?;
     collab::flush_all(&state).await;
     Ok(())
+}
+
+fn header_layer(name: HeaderName, value: &'static str) -> SetResponseHeaderLayer<HeaderValue> {
+    SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value))
 }
 
 async fn shutdown() {

@@ -104,15 +104,40 @@ pub async fn read(
         return Err(AppError::not_found());
     }
     let bytes = tokio::fs::read(&full).await?;
-    let mime = mime_guess::from_path(&rel).first_or_octet_stream();
-    Ok((
+    let (mime, csp) = served_type(&rel);
+    let mut res = (
         [
-            (header::CONTENT_TYPE, mime.to_string()),
+            (header::CONTENT_TYPE, mime),
             (header::CACHE_CONTROL, "no-cache".into()),
         ],
         bytes,
     )
-        .into_response())
+        .into_response();
+    if let Some(csp) = csp {
+        res.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static(csp),
+        );
+    }
+    Ok(res)
+}
+
+/// Content type and CSP for serving a user-uploaded file from our origin. Uploaded files are
+/// untrusted, so markup that a browser would execute (HTML, XML, JavaScript) is served as plain
+/// text, and everything except PDFs (which need the browser's PDF viewer) is sandboxed.
+fn served_type(rel: &str) -> (String, Option<&'static str>) {
+    let mime = mime_guess::from_path(rel).first_or_octet_stream();
+    let sandbox =
+        Some("sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+    match (mime.type_().as_str(), mime.subtype().as_str()) {
+        ("application", "pdf") => (mime.to_string(), None),
+        ("image", _) | ("audio", _) | ("video", _) | ("font", _) => (mime.to_string(), sandbox),
+        ("text", _)
+        | ("application", "xml" | "xhtml+xml" | "javascript" | "json" | "x-tex" | "x-latex") => {
+            ("text/plain; charset=utf-8".into(), sandbox)
+        }
+        _ => ("application/octet-stream".into(), sandbox),
+    }
 }
 
 #[derive(Deserialize)]

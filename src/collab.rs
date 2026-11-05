@@ -18,7 +18,7 @@ use axum::{
         Path, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, header},
+    http::HeaderMap,
     response::Response,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -485,27 +485,13 @@ pub async fn flush_all(state: &SharedState) {
     }
 }
 
-fn same_origin(headers: &HeaderMap) -> bool {
-    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
-        return true;
-    };
-    let Some(host) = headers.get(header::HOST).and_then(|v| v.to_str().ok()) else {
-        return false;
-    };
-    let origin_host = origin.split("://").nth(1).unwrap_or(origin);
-    let forwarded = headers
-        .get("x-forwarded-host")
-        .and_then(|v| v.to_str().ok());
-    origin_host == host || Some(origin_host) == forwarded
-}
-
 pub async fn ws_handler(
     State(state): State<SharedState>,
     Path(id): Path<String>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> AppResult<Response> {
-    if !same_origin(&headers) {
+    if !crate::security::same_origin(&headers) {
         return Err(AppError::forbidden());
     }
     let user = user_from_session(&state, &headers)

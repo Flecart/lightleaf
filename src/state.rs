@@ -17,6 +17,9 @@ pub struct AppState {
     db: Arc<Mutex<Connection>>,
     pub hub: Hub,
     pub compile_slots: Semaphore,
+    /// Bounds concurrent Argon2 computations so a login flood cannot exhaust memory.
+    pub hash_slots: Semaphore,
+    pub limits: crate::security::Limits,
     /// One async lock per project, serialising disk-level operations (flush, git, compile sync).
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -53,6 +56,8 @@ impl AppState {
     pub fn new(cfg: Config, conn: Connection) -> Self {
         AppState {
             compile_slots: Semaphore::new(cfg.max_concurrent_compiles),
+            hash_slots: Semaphore::new(4),
+            limits: crate::security::Limits::default(),
             cfg,
             db: Arc::new(Mutex::new(conn)),
             hub: Hub::default(),

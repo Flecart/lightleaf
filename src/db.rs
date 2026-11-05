@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    ip         TEXT NOT NULL,
+    user_agent TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS projects (
     id         TEXT PRIMARY KEY,
@@ -47,6 +51,7 @@ CREATE TABLE IF NOT EXISTS chat (
 );
 CREATE INDEX IF NOT EXISTS chat_project ON chat(project_id, id);
 CREATE INDEX IF NOT EXISTS members_user ON members(user_id);
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 "#;
 
 pub fn open(path: &Path) -> anyhow::Result<Connection> {

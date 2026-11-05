@@ -53,7 +53,7 @@ function App() {
       location.hash = '#/';
       return null;
     }
-    return <AuthPage config={config} mode={hash === '/register' || config.firstUser ? 'register' : 'login'} onAuth={refresh} />;
+    return <AuthPage config={config} mode={hash === '/register' || (config.firstUser && config.signup) ? 'register' : 'login'} onAuth={refresh} />;
   }
 
   const m = hash.match(/^\/project\/([0-9a-f]+)/);

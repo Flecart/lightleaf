@@ -4,8 +4,10 @@ use std::path::PathBuf;
 pub enum Signup {
     /// Anyone can register.
     Open,
-    /// Only admins can create accounts (the very first account is always allowed).
+    /// No self-registration: admins create accounts in the admin panel or with `lightleaf user add`.
     Closed,
+    /// Self-registration only from the server machine itself (e.g. through an SSH tunnel).
+    Local,
 }
 
 #[derive(Clone, Debug)]
@@ -19,6 +21,11 @@ pub struct Config {
     pub compile_wrapper: Vec<String>,
     pub max_upload_bytes: usize,
     pub secure_cookies: bool,
+    /// Honour `X-Forwarded-For` from a reverse proxy when identifying clients (rate limiting).
+    pub trust_proxy: bool,
+    pub session_days: i64,
+    /// Sessions unused for this many days are logged out.
+    pub session_idle_days: i64,
     pub bootstrap_admin: Option<(String, String)>,
     pub site_name: String,
 }
@@ -33,9 +40,17 @@ impl Config {
         Config {
             bind: env("LIGHTLEAF_BIND").unwrap_or_else(|| "0.0.0.0:8080".into()),
             data_dir,
-            signup: match env("LIGHTLEAF_SIGNUP").as_deref() {
-                Some("closed") | Some("false") | Some("0") => Signup::Closed,
-                _ => Signup::Open,
+            signup: match env("LIGHTLEAF_SIGNUP")
+                .map(|v| v.to_ascii_lowercase())
+                .as_deref()
+            {
+                Some("open") | Some("true") | Some("1") => Signup::Open,
+                Some("local") => Signup::Local,
+                Some("closed") | Some("false") | Some("0") | None => Signup::Closed,
+                Some(other) => {
+                    eprintln!("warning: unknown LIGHTLEAF_SIGNUP={other:?}, using \"closed\"");
+                    Signup::Closed
+                }
             },
             compile_timeout_secs: env("LIGHTLEAF_COMPILE_TIMEOUT")
                 .and_then(|v| v.parse().ok())
@@ -59,6 +74,18 @@ impl Config {
                 env("LIGHTLEAF_SECURE_COOKIES").as_deref(),
                 Some("1") | Some("true")
             ),
+            trust_proxy: matches!(
+                env("LIGHTLEAF_TRUST_PROXY").as_deref(),
+                Some("1") | Some("true")
+            ),
+            session_days: env("LIGHTLEAF_SESSION_DAYS")
+                .and_then(|v| v.parse().ok())
+                .filter(|d| *d > 0)
+                .unwrap_or(30),
+            session_idle_days: env("LIGHTLEAF_SESSION_IDLE_DAYS")
+                .and_then(|v| v.parse().ok())
+                .filter(|d| *d > 0)
+                .unwrap_or(14),
             bootstrap_admin: match (
                 env("LIGHTLEAF_ADMIN_EMAIL"),
                 env("LIGHTLEAF_ADMIN_PASSWORD"),

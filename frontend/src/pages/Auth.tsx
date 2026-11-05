@@ -34,7 +34,15 @@ export function AuthPage(props: { config: PublicConfig; mode: 'login' | 'registe
           <span>{props.config.siteName}</span>
         </div>
         <h1>{mode === 'register' ? (props.config.firstUser ? 'Create the admin account' : 'Create an account') : 'Log in'}</h1>
-        {props.config.firstUser && <p class="muted">This is a fresh install. The first account becomes the administrator.</p>}
+        {props.config.firstUser && props.config.signup && (
+          <p class="muted">This is a fresh install. The first account becomes the administrator.</p>
+        )}
+        {mode === 'register' && !props.config.signup && props.config.signupMessage && (
+          <div class="alert">{props.config.signupMessage}</div>
+        )}
+        {mode === 'login' && props.config.firstUser && !props.config.signup && props.config.signupMessage && (
+          <div class="alert">{props.config.signupMessage}</div>
+        )}
         <label>
           Email
           <input type="email" required autoFocus value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
@@ -47,13 +55,13 @@ export function AuthPage(props: { config: PublicConfig; mode: 'login' | 'registe
         )}
         <label>
           Password
-          <input type="password" required minLength={mode === 'register' ? 8 : 1} value={password} onInput={(e) => setPassword(e.currentTarget.value)} />
+          <input type="password" required autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={mode === 'register' ? 8 : 1} value={password} onInput={(e) => setPassword(e.currentTarget.value)} />
         </label>
         {error && <div class="alert error">{error}</div>}
-        <button class="btn primary block" disabled={busy}>
+        <button class="btn primary block" disabled={busy || (mode === 'register' && !props.config.signup)}>
           {mode === 'register' ? 'Register' : 'Log in'}
         </button>
-        {!props.config.firstUser && props.config.signup && (
+        {props.config.signup && !props.config.firstUser && (
           <p class="muted center">
             {mode === 'login' ? (
               <>

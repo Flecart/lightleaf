@@ -78,6 +78,7 @@ export interface CompileResult {
 export interface PublicConfig {
   siteName: string;
   signup: boolean;
+  signupMessage: string | null;
   firstUser: boolean;
   compilers: string[];
 }
