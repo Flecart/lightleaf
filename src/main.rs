@@ -13,6 +13,7 @@ mod git;
 mod metrics;
 mod overleaf;
 mod projects;
+mod reviewer;
 mod security;
 mod state;
 mod util;
@@ -171,6 +172,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/projects/{id}/remote/pull", post(git::remote_pull))
         .route("/projects/{id}/remote/push", post(git::remote_push))
         .route("/projects/{id}/ws", get(collab::ws_handler))
+        // Optional AI review (src/reviewer.rs): 404 when not configured, 503 when unreachable.
+        .route(
+            "/projects/{id}/review",
+            get(reviewer::latest).post(reviewer::start),
+        )
+        .route("/projects/{id}/review/clear", post(reviewer::clear))
+        .route("/projects/{id}/review/jobs/{job}", get(reviewer::status))
+        .route("/reviewer/health", get(reviewer::health))
         .layer(DefaultBodyLimit::max(cfg.max_upload_bytes))
         .layer(middleware::from_fn(security::csrf_guard));
 
@@ -208,6 +217,13 @@ async fn main() -> anyhow::Result<()> {
         .layer(header_layer(header::REFERRER_POLICY, "same-origin"))
         .with_state(state.clone());
 
+    if let Some(r) = &cfg.reviewer {
+        tracing::info!(
+            "AI review enabled (reviewer at {}, git via {})",
+            r.url,
+            r.git_base
+        );
+    }
     if cfg.signup == config::Signup::Open {
         tracing::warn!(
             "LIGHTLEAF_SIGNUP=open: anyone who can reach this server can create an account"

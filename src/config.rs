@@ -39,6 +39,8 @@ pub struct Config {
     /// Where the source code of this deployment can be downloaded (AGPL-3.0 §13).
     pub source_url: String,
     pub bootstrap_admin: Option<(String, String)>,
+    /// The optional AI review service; `None` disables the feature entirely.
+    pub reviewer: Option<crate::reviewer::ReviewerConfig>,
     /// Bearer token that grants access to /metrics from other machines.
     pub metrics_token: Option<String>,
     pub site_name: String,
@@ -48,11 +50,42 @@ fn env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }
 
+/// Reads the optional reviewer integration. Misconfiguration disables the feature with a
+/// warning instead of failing startup: the editor must never depend on the reviewer.
+fn reviewer_config(bind: &str) -> Option<crate::reviewer::ReviewerConfig> {
+    let url = env("LIGHTLEAF_REVIEWER_URL")?;
+    if !url.starts_with("http://") {
+        eprintln!(
+            "warning: LIGHTLEAF_REVIEWER_URL must be an http:// URL on an internal network; AI review disabled"
+        );
+        return None;
+    }
+    let Some(secret) = env("LIGHTLEAF_REVIEWER_SECRET").filter(|s| s.len() >= 16) else {
+        eprintln!(
+            "warning: LIGHTLEAF_REVIEWER_SECRET (16+ characters) is required with LIGHTLEAF_REVIEWER_URL; AI review disabled"
+        );
+        return None;
+    };
+    let port = bind.rsplit(':').next().unwrap_or("8080");
+    Some(crate::reviewer::ReviewerConfig {
+        url: url.trim_end_matches('/').to_string(),
+        secret,
+        git_base: env("LIGHTLEAF_REVIEWER_GIT_URL")
+            .unwrap_or_else(|| format!("http://127.0.0.1:{port}")),
+        token_ttl_secs: env("LIGHTLEAF_REVIEWER_TOKEN_TTL")
+            .and_then(|v| v.parse().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(3600),
+    })
+}
+
 impl Config {
     pub fn from_env() -> Self {
         let data_dir = PathBuf::from(env("LIGHTLEAF_DATA").unwrap_or_else(|| "./data".into()));
+        let bind = env("LIGHTLEAF_BIND").unwrap_or_else(|| "0.0.0.0:8080".into());
         Config {
-            bind: env("LIGHTLEAF_BIND").unwrap_or_else(|| "0.0.0.0:8080".into()),
+            reviewer: reviewer_config(&bind),
+            bind,
             data_dir,
             signup: match env("LIGHTLEAF_SIGNUP")
                 .map(|v| v.to_ascii_lowercase())

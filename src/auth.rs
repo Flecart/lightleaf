@@ -413,6 +413,7 @@ pub async fn public_config(
         "firstUser": users == 0,
         "compilers": compilers,
         "sourceUrl": state.cfg.source_url,
+        "reviewer": state.cfg.reviewer.is_some(),
         "version": env!("CARGO_PKG_VERSION"),
     })))
 }
