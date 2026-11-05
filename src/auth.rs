@@ -348,6 +348,7 @@ fn too_many(retry_after: u64) -> AppError {
 fn check_ip(state: &AppState, ip: &str) -> AppResult<()> {
     if let Some(wait) = state.limits.auth_per_ip.blocked(ip) {
         tracing::warn!("rate limited authentication attempts from {ip}");
+        crate::metrics::Metrics::inc(&state.metrics.auth_rate_limited);
         return Err(too_many(wait));
     }
     Ok(())
@@ -450,6 +451,7 @@ pub async fn login(
     check_ip(&state, &ip)?;
     let email = req.email.trim().to_lowercase();
     if let Some(wait) = state.limits.failed_per_account.blocked(&email) {
+        crate::metrics::Metrics::inc(&state.metrics.auth_rate_limited);
         return Err(too_many(wait));
     }
     let e = email.clone();
@@ -471,11 +473,13 @@ pub async fn login(
         && let Some(id) = id
     {
         state.limits.failed_per_account.clear(&email);
+        crate::metrics::Metrics::inc(&state.metrics.logins_ok);
         return start_session(&state, id, ip, user_agent(&headers)).await;
     }
     state.limits.failed_per_account.hit(&email);
     state.limits.auth_per_ip.hit(&ip);
     tracing::info!("failed login for {email} from {ip}");
+    crate::metrics::Metrics::inc(&state.metrics.logins_failed);
     Err(AppError(
         axum::http::StatusCode::UNAUTHORIZED,
         "invalid email or password".into(),

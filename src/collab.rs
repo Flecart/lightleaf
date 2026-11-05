@@ -73,6 +73,13 @@ impl Outbox {
 }
 
 #[derive(Default)]
+pub struct HubStats {
+    pub rooms: u64,
+    pub clients: u64,
+    pub docs: u64,
+}
+
+#[derive(Default)]
 pub struct Hub {
     rooms: Mutex<HashMap<String, Arc<Room>>>,
     next_id: AtomicU64,
@@ -218,6 +225,18 @@ impl Hub {
 
     pub fn get(&self, id: &str) -> Option<Arc<Room>> {
         self.rooms.lock().unwrap().get(id).cloned()
+    }
+
+    /// Rooms, connected clients and loaded documents, for /metrics.
+    pub fn stats(&self) -> HubStats {
+        let mut s = HubStats::default();
+        for room in self.all() {
+            let inner = room.inner.lock().unwrap();
+            s.rooms += 1;
+            s.clients += inner.clients.len() as u64;
+            s.docs += inner.docs.len() as u64;
+        }
+        s
     }
 
     fn all(&self) -> Vec<Arc<Room>> {
@@ -545,6 +564,7 @@ async fn client_loop(
         kick: kick.clone(),
     };
     let cid = state.hub.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+    crate::metrics::Metrics::inc(&state.metrics.ws_connections);
     let room = state.hub.room(&pid, root.clone());
     {
         let mut inner = room.inner.lock().unwrap();
@@ -582,6 +602,7 @@ async fn client_loop(
             },
             _ = kick.notified() => {
                 tracing::info!("disconnecting slow client {cid} of project {pid}");
+                crate::metrics::Metrics::inc(&state.metrics.ws_slow_disconnects);
                 break;
             }
         };
@@ -623,6 +644,7 @@ async fn client_loop(
                         room.broadcast_presence();
                     }
                     MSG_UPDATE => {
+                        crate::metrics::Metrics::inc(&state.metrics.ws_updates);
                         if let Err(e) =
                             room.update(cid, &path, payload, Message::Binary(data.clone()))
                         {

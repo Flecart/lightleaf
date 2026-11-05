@@ -131,6 +131,7 @@ All configuration is done with environment variables:
 | `LIGHTLEAF_SESSION_IDLE_DAYS` | `14` | Sessions unused for this long are logged out |
 | `LIGHTLEAF_SOURCE_URL` | repository URL | "Source code" link shown in the UI (AGPL §13 — point it at your fork if you modify Lightleaf) |
 | `LIGHTLEAF_SITE_NAME` | `Lightleaf` | Name shown in the UI |
+| `LIGHTLEAF_METRICS_TOKEN` | – | Allows scraping `/metrics` from other machines with `Authorization: Bearer <token>` (it is always reachable from the server itself) |
 | `RUST_LOG` | `lightleaf=info` | Log level |
 
 ## Accounts and sign-up

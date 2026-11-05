@@ -468,6 +468,7 @@ pub async fn compile(
 
     // Fairness: one user cannot fill the global compile queue.
     let _user_slot = state.limits.user_compile_slot(user.id).ok_or_else(|| {
+        crate::metrics::Metrics::inc(&state.metrics.compiles_rejected);
         AppError(
             axum::http::StatusCode::TOO_MANY_REQUESTS,
             "you already have compiles running — wait for them to finish".into(),
@@ -483,9 +484,11 @@ pub async fn compile(
     // auto-compile and several collaborators, a burst of N requests costs at most two compiles.
     let key = format!("{id}\0{compiler}\0{main}");
     if let Some(result) = state.recent_compile(&key, arrived) {
+        crate::metrics::Metrics::inc(&state.metrics.compiles_coalesced);
         return Ok(Json(result));
     }
     if let Some(wait) = state.limits.compiles_per_user.blocked(&user.id.to_string()) {
+        crate::metrics::Metrics::inc(&state.metrics.compiles_rejected);
         return Err(AppError(
             axum::http::StatusCode::TOO_MANY_REQUESTS,
             format!("compile limit reached — try again in {wait} s"),
@@ -563,6 +566,7 @@ pub async fn compile(
     } else {
         "failure"
     };
+    state.metrics.record_compile(status, elapsed);
     let result = json!({
         "status": status,
         "durationMs": elapsed,

@@ -39,6 +39,8 @@ pub struct Config {
     /// Where the source code of this deployment can be downloaded (AGPL-3.0 §13).
     pub source_url: String,
     pub bootstrap_admin: Option<(String, String)>,
+    /// Bearer token that grants access to /metrics from other machines.
+    pub metrics_token: Option<String>,
     pub site_name: String,
 }
 
@@ -127,6 +129,7 @@ impl Config {
                 (Some(e), Some(p)) => Some((e, p)),
                 _ => None,
             },
+            metrics_token: env("LIGHTLEAF_METRICS_TOKEN"),
             site_name: env("LIGHTLEAF_SITE_NAME").unwrap_or_else(|| "Lightleaf".into()),
         }
     }

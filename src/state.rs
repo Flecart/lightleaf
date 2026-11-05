@@ -26,6 +26,7 @@ pub struct AppState {
     /// Bounds concurrent Argon2 computations so a login flood cannot exhaust memory.
     pub hash_slots: Semaphore,
     pub limits: crate::security::Limits,
+    pub metrics: crate::metrics::Metrics,
     /// Last compile result per (project, compiler, main file), with the time it started.
     recent_compiles: Mutex<HashMap<String, (std::time::Instant, serde_json::Value)>>,
     /// One async lock per project, serialising disk-level operations (flush, git, compile sync).
@@ -70,6 +71,7 @@ impl AppState {
             compile_slots: Semaphore::new(cfg.max_concurrent_compiles),
             hash_slots: Semaphore::new(4),
             limits: crate::security::Limits::new(&cfg),
+            metrics: crate::metrics::Metrics::default(),
             recent_compiles: Mutex::new(HashMap::new()),
             cfg,
             db: Arc::new(conns.into_iter().map(Mutex::new).collect()),

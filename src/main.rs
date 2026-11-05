@@ -10,6 +10,7 @@ mod db;
 mod error;
 mod files;
 mod git;
+mod metrics;
 mod overleaf;
 mod projects;
 mod security;
@@ -178,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api", api)
         .nest("/git", git_routes)
+        .route("/metrics", get(metrics::handler))
         .fallback(assets::static_handler)
         // Only compress what benefits: PDFs, zips, images and git packs are already compressed,
         // and recompressing them on every download would be the biggest CPU cost after TeX.
