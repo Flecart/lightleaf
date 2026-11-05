@@ -1,0 +1,20 @@
+[package]
+name = "lightleaf-reviewer"
+version = "0.1.0"
+edition = "2024"
+description = "AI review service for Lightleaf: reads a project over git and writes review comments into the LaTeX source"
+license = "AGPL-3.0-only"
+repository = "https://github.com/Flecart/lightleaf"
+publish = false
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.23.1"
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+uuid = { version = "1.29.0", features = ["v4"] }

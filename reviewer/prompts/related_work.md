@@ -1,0 +1,1 @@
+Review the related work and background. Check that prior work is organised by idea rather than listed paper by paper, that the paper explains how it differs from the closest prior work, that obviously relevant lines of work are not missing, and that preliminaries define exactly what the rest of the paper needs, with consistent notation.

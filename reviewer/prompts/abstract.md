@@ -1,0 +1,1 @@
+Review the abstract. A strong abstract states the problem and why it matters, what is new, how it was done, and the main quantitative result, in that order, without undefined jargon. Check that every claim in the abstract is supported later in the paper and that the abstract does not promise more than the paper delivers.

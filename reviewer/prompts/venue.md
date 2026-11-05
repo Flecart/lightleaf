@@ -1,0 +1,1 @@
+Review the paper against the expectations of the target venue named in the task. Consider the venue's typical standards for contribution type, evaluation, reproducibility, ethics or limitations statements, anonymity, and length, as far as you know them. Only make claims about venue rules you are confident of, and phrase them as things to check when unsure.

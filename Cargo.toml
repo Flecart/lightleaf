@@ -9,6 +9,12 @@ readme = "README.md"
 keywords = ["latex", "typst", "overleaf", "collaborative", "editor"]
 categories = ["web-programming", "text-editors"]
 
+# The AI reviewer is a separate binary with its own dependencies (see reviewer/README.md);
+# a plain `cargo build` only builds Lightleaf itself.
+[workspace]
+members = ["reviewer"]
+default-members = ["."]
+
 [dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"

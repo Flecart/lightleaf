@@ -1,0 +1,1 @@
+Review the writing across the whole paper. Look for unclear or overly long sentences, ambiguous pronouns, inconsistent terminology or notation, undefined acronyms, informal language, filler, and paragraphs without a clear point. Prefer comments where a rewrite would noticeably improve clarity, and suggest the rewrite.

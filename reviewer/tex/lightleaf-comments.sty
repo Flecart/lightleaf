@@ -1,0 +1,60 @@
+% lightleaf-comments.sty -- review comments written directly in the LaTeX source.
+%
+%   \@@MACRO@@{text}           a comment, shown in the PDF
+%   \@@MACRO@@[label]{text}    a comment with a label (e.g. a name); the Lightleaf AI reviewer
+%                              writes \@@MACRO@@[AI: <area>, <severity>]{text}
+%
+% Package options:
+%   inline  (default)  comments appear in the text, in colour
+%   margin             comments go into the margin where LaTeX allows it, inline elsewhere
+%   hide               comments produce no output (use this for the final version)
+%
+% If the document already defines \@@MACRO@@ itself, that definition is kept.
+% Added by Lightleaf (https://github.com/Flecart/lightleaf); AGPL-3.0-only.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{lightleaf-comments}[2026/11/05 v1.0 Lightleaf review comments]
+\RequirePackage{xcolor}
+\newif\ifllc@hide
+\newif\ifllc@margin
+\DeclareOption{hide}{\llc@hidetrue}
+\DeclareOption{margin}{\llc@margintrue}
+\DeclareOption{inline}{\llc@marginfalse}
+\ProcessOptions\relax
+
+\definecolor{llc@human}{RGB}{176,32,48}
+\definecolor{llc@ai}{RGB}{24,86,190}
+\newcommand\llc@defaultlabel{@@MACRO@@}
+
+% #1 label, #2 text. Labels starting with "AI:" are drawn in blue, others in red.
+\newcommand\llc@render[2]{%
+  \begingroup
+  \in@{AI:}{#1}%
+  \ifin@\color{llc@ai}\else\color{llc@human}\fi
+  \textbf{[#1]}~\textit{#2}%
+  \endgroup}
+
+\DeclareRobustCommand\llc@comment[2][\llc@defaultlabel]{%
+  \ifllc@hide
+    \@bsphack\@esphack
+  \else
+    \ifllc@margin
+      % \marginpar is only legal in outer paragraph mode and outside floats.
+      \ifinner
+        \llc@render{#1}{#2}%
+      \else
+        \ifnum\@floatpenalty<\z@
+          \llc@render{#1}{#2}%
+        \else
+          \marginpar{\raggedright\footnotesize\llc@render{#1}{#2}}%
+        \fi
+      \fi
+    \else
+      \llc@render{#1}{#2}%
+    \fi
+  \fi}
+
+\AtBeginDocument{%
+  \@ifundefined{@@MACRO@@}{\let\@@MACRO@@\llc@comment}{}%
+  % Comments in section titles must not end up in PDF bookmarks.
+  \@ifpackageloaded{hyperref}{\pdfstringdefDisableCommands{\renewcommand\@@MACRO@@[2][]{}}}{}}
+\endinput
