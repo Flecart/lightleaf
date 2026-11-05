@@ -47,12 +47,17 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("lightleaf=info,tower_http=warn")),
-        )
-        .init();
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("lightleaf=info,tower_http=warn"));
+    // LIGHTLEAF_LOG_FORMAT=json emits one JSON object per line, for log aggregators.
+    if std::env::var("LIGHTLEAF_LOG_FORMAT").is_ok_and(|v| v.eq_ignore_ascii_case("json")) {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(filter)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
 
     let cfg = config::Config::from_env();
     std::fs::create_dir_all(cfg.projects_dir())?;
