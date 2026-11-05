@@ -59,6 +59,21 @@ pub fn available_compilers() -> Vec<&'static str> {
     tools().compilers.clone()
 }
 
+/// XeLaTeX, LuaLaTeX and Tectonic are deliberately not supported. Returns the message shown
+/// when a project (e.g. one imported from Overleaf) asks for one of them.
+pub fn incompatible_engine(c: &str) -> Option<String> {
+    let name = match c {
+        "xelatex" => "XeLaTeX",
+        "lualatex" => "LuaLaTeX",
+        "tectonic" => "Tectonic",
+        _ => return None,
+    };
+    Some(format!(
+        "{name} is incompatible with Lightleaf. Switch this project to folio or pdflatex \
+         (project menu → Settings → Compiler)."
+    ))
+}
+
 pub fn is_known_compiler(c: &str) -> bool {
     matches!(c, "pdflatex" | "folio" | "typst")
 }
@@ -546,6 +561,9 @@ pub async fn compile(
         Some(m) if !m.is_empty() => clean_rel_path(&m)?,
         _ => clean_rel_path(&main_file)?,
     };
+    if let Some(msg) = incompatible_engine(&compiler) {
+        return Err(AppError::bad(msg));
+    }
     if !tools().compilers.contains(&compiler.as_str()) {
         return Err(AppError::bad(format!(
             "compiler '{compiler}' is not installed on this server"
@@ -824,6 +842,21 @@ pub async fn synctex_from_code(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xelatex_and_lualatex_are_incompatible() {
+        for c in ["xelatex", "lualatex", "tectonic"] {
+            let m = incompatible_engine(c).unwrap();
+            assert!(
+                m.contains("incompatible with Lightleaf") && m.contains("folio or pdflatex"),
+                "{m}"
+            );
+            assert!(!is_known_compiler(c));
+        }
+        assert!(
+            incompatible_engine("pdflatex").is_none() && incompatible_engine("folio").is_none()
+        );
+    }
 
     #[test]
     fn parses_file_line_errors() {

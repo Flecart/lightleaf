@@ -258,8 +258,14 @@ pub async fn import_zip(
     tokio::fs::rename(&tmp, &dir).await?;
     init_repo(&dir).await?;
     commit_all(&dir, None, "Import project", Some(&user)).await?;
-    let note = (compiler != det.wanted)
-        .then(|| format!("{} is not available here, using {compiler}", det.wanted));
+    let note =
+        (compiler != det.wanted).then(|| match crate::compile::incompatible_engine(&det.wanted) {
+            Some(_) => format!(
+                "{} is incompatible with Lightleaf; this project uses {compiler}",
+                det.wanted
+            ),
+            None => format!("{} is not available here, using {compiler}", det.wanted),
+        });
     Ok(Json(json!({
         "id": id,
         "name": name,
@@ -322,7 +328,9 @@ pub async fn update(
     if let Some(c) = &req.compiler
         && !is_known_compiler(c)
     {
-        return Err(AppError::bad("unknown compiler"));
+        return Err(AppError::bad(
+            crate::compile::incompatible_engine(c).unwrap_or_else(|| "unknown compiler".into()),
+        ));
     }
     let main = req.main_file.map(|m| clean_rel_path(&m)).transpose()?;
     let pid = id.clone();

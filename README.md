@@ -24,8 +24,9 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 - **LaTeX** — [folio](https://github.com/flecart/folio), a LaTeX compiler written in Rust and the default for new
   projects (no SyncTeX yet; documents it cannot handle are compiled through its slimtex fallback). `pdflatex` is still
   available (through `latexmk` when installed, otherwise an automatic bibtex/biber/makeindex rerun pipeline), but
-  every pdflatex compile carries a warning to switch to folio. Imported projects that ask for XeLaTeX, LuaLaTeX or
-  Tectonic are compiled with folio.
+  every pdflatex compile carries a warning to switch to folio. XeLaTeX, LuaLaTeX and Tectonic are **not supported**:
+  imported projects that ask for them get folio (or pdflatex) and an "incompatible" note, and a project still set to one
+  of them is told to switch when it compiles.
 - **Typst** — first-class support, with syntax highlighting and an outline.
 - **Error log** — parsed errors, warnings and bad boxes, clickable to jump to the line; inline diagnostics in the editor.
 - **SyncTeX** — double-click the PDF to jump to the source, and jump from the source to the PDF.
