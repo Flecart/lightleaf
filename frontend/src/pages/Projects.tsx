@@ -98,7 +98,7 @@ export function ProjectsPage(props: { user: User; config: PublicConfig; onLogout
       onDrop={onDrop}
     >
       <TopBar>
-        <UserMenu user={props.user} onLogout={props.onLogout} />
+        <UserMenu user={props.user} sourceUrl={props.config.sourceUrl} onLogout={props.onLogout} />
       </TopBar>
       <div class="dashboard">
         <aside class="dash-side">

@@ -125,6 +125,7 @@ All configuration is done with environment variables:
 | `LIGHTLEAF_TRUST_PROXY` | `false` | Use the client IP from `X-Forwarded-For` (set to `true` **only** behind your own reverse proxy) |
 | `LIGHTLEAF_SESSION_DAYS` | `30` | Maximum session lifetime |
 | `LIGHTLEAF_SESSION_IDLE_DAYS` | `14` | Sessions unused for this long are logged out |
+| `LIGHTLEAF_SOURCE_URL` | repository URL | "Source code" link shown in the UI (AGPL §13 — point it at your fork if you modify Lightleaf) |
 | `LIGHTLEAF_SITE_NAME` | `Lightleaf` | Name shown in the UI |
 | `RUST_LOG` | `lightleaf=info` | Log level |
 
@@ -243,7 +244,7 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Lightleaf is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, modify
 and self-host it freely. If you run a modified version as a network service, you must offer its source code to your
-users.
+users (set `LIGHTLEAF_SOURCE_URL` to point at it).
 
 For licensing under other terms (for example, to embed Lightleaf in a proprietary product without the AGPL's
 obligations), contact the maintainer.

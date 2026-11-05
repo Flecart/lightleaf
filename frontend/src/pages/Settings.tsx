@@ -72,7 +72,7 @@ export function SettingsPage(props: { user: User; config: PublicConfig; onLogout
   return (
     <div class="page">
       <TopBar title="Account settings">
-        <UserMenu user={props.user} onLogout={props.onLogout} />
+        <UserMenu user={props.user} sourceUrl={props.config.sourceUrl} onLogout={props.onLogout} />
       </TopBar>
       <div class="settings">
         <section class="card">

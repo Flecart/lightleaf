@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { post, User } from '../api';
 import { Avatar, Icon } from '../ui';
 
-export function UserMenu(props: { user: User; onLogout: () => void }) {
+export function UserMenu(props: { user: User; onLogout: () => void; sourceUrl?: string }) {
   const [open, setOpen] = useState(false);
   const logout = async () => {
     await post('/api/auth/logout');
@@ -30,6 +30,9 @@ export function UserMenu(props: { user: User; onLogout: () => void }) {
               <Icon name="shield" /> Admin
             </a>
           )}
+          <a href={props.sourceUrl ?? 'https://github.com/Flecart/lightleaf'} target="_blank" rel="noopener noreferrer">
+            <Icon name="git" /> Source code (AGPL)
+          </a>
           <hr />
           <button onClick={logout}>
             <Icon name="logout" /> Log out

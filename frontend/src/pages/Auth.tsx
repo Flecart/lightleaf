@@ -74,6 +74,9 @@ export function AuthPage(props: { config: PublicConfig; mode: 'login' | 'registe
             )}
           </p>
         )}
+        <p class="muted center small">
+          <a href={props.config.sourceUrl} target="_blank" rel="noopener noreferrer">Source code</a> · AGPL-3.0
+        </p>
       </form>
     </div>
   );

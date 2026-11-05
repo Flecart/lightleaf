@@ -396,6 +396,8 @@ pub async fn public_config(
         "signupMessage": policy.err(),
         "firstUser": users == 0,
         "compilers": compilers,
+        "sourceUrl": state.cfg.source_url,
+        "version": env!("CARGO_PKG_VERSION"),
     })))
 }
 

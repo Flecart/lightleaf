@@ -36,7 +36,7 @@ export function AdminPage(props: { user: User; config: PublicConfig }) {
   return (
     <div class="page">
       <TopBar title="Administration">
-        <UserMenu user={props.user} onLogout={() => (location.hash = '#/login')} />
+        <UserMenu user={props.user} sourceUrl={props.config.sourceUrl} onLogout={() => (location.hash = '#/login')} />
       </TopBar>
       <div class="settings">
         <section class="card">

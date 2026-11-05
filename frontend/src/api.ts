@@ -81,6 +81,8 @@ export interface PublicConfig {
   signupMessage: string | null;
   firstUser: boolean;
   compilers: string[];
+  sourceUrl: string;
+  version: string;
 }
 
 export function timeAgo(secs: number): string {

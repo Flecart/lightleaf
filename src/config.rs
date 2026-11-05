@@ -26,6 +26,8 @@ pub struct Config {
     pub session_days: i64,
     /// Sessions unused for this many days are logged out.
     pub session_idle_days: i64,
+    /// Where the source code of this deployment can be downloaded (AGPL-3.0 §13).
+    pub source_url: String,
     pub bootstrap_admin: Option<(String, String)>,
     pub site_name: String,
 }
@@ -86,6 +88,8 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .filter(|d| *d > 0)
                 .unwrap_or(14),
+            source_url: env("LIGHTLEAF_SOURCE_URL")
+                .unwrap_or_else(|| env!("CARGO_PKG_REPOSITORY").to_string()),
             bootstrap_admin: match (
                 env("LIGHTLEAF_ADMIN_EMAIL"),
                 env("LIGHTLEAF_ADMIN_PASSWORD"),
