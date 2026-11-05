@@ -172,9 +172,12 @@ fn relay((status, body): (u16, Value)) -> AppResult<Json<Value>> {
 
 #[derive(Deserialize, Default)]
 pub struct StartReq {
-    /// Target venue, e.g. "NeurIPS" (free text; empty = general academic standards).
+    /// Target venue id from the reviewer's list (e.g. `neurips_2025`), or empty.
     #[serde(default)]
     venue: String,
+    /// Strict mode: only issues that matter for acceptance; `None` = the reviewer's default.
+    #[serde(default)]
+    strict: Option<bool>,
     /// Optional extra instructions from the author ("focus on the methods section").
     #[serde(default)]
     focus: String,
@@ -225,11 +228,26 @@ pub async fn start(
     state.require(&id, user.id, Role::Editor).await?;
     crate::collab::flush_project(&state, &id).await?;
     let req = body.map(|b| b.0).unwrap_or_default();
-    let opts = json!({
+    let mut opts = json!({
         "venue": req.venue.chars().take(100).collect::<String>(),
         "focus": req.focus.chars().take(2000).collect::<String>(),
     });
+    if let Some(strict) = req.strict {
+        opts["strict"] = json!(strict);
+    }
     let payload = job_payload(&state, &user, &id, "review", opts).await?;
+    relay(call(cfg(&state)?, "POST", "/v1/jobs", Some(&payload)).await?)
+}
+
+/// Checks the cited references against Semantic Scholar; comments go next to the citations.
+pub async fn references(
+    State(state): State<SharedState>,
+    user: User,
+    Path(id): Path<String>,
+) -> AppResult<Json<Value>> {
+    state.require(&id, user.id, Role::Editor).await?;
+    crate::collab::flush_project(&state, &id).await?;
+    let payload = job_payload(&state, &user, &id, "references", json!({})).await?;
     relay(call(cfg(&state)?, "POST", "/v1/jobs", Some(&payload)).await?)
 }
 

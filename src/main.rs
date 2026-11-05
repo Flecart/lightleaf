@@ -178,6 +178,10 @@ async fn main() -> anyhow::Result<()> {
             get(reviewer::latest).post(reviewer::start),
         )
         .route("/projects/{id}/review/clear", post(reviewer::clear))
+        .route(
+            "/projects/{id}/review/references",
+            post(reviewer::references),
+        )
         .route("/projects/{id}/review/jobs/{job}", get(reviewer::status))
         .route("/reviewer/health", get(reviewer::health))
         .layer(DefaultBodyLimit::max(cfg.max_upload_bytes))
