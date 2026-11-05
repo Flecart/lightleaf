@@ -475,8 +475,13 @@ pub async fn flush_project(state: &SharedState, project_id: &str) -> AppResult<(
 pub fn spawn_flusher(state: SharedState) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(2));
+        let mut ticks: u64 = 0;
         loop {
             tick.tick().await;
+            ticks += 1;
+            if ticks.is_multiple_of(30) {
+                state.prune_locks();
+            }
             for room in state.hub.all() {
                 {
                     let lock = state.project_lock(&room.id);

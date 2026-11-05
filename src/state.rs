@@ -133,6 +133,13 @@ impl AppState {
         m.insert(key, (started, result));
     }
 
+    /// Drops per-project locks nobody holds or waits for, so the map does not grow with every
+    /// project ever touched.
+    pub fn prune_locks(&self) {
+        let mut locks = self.locks.lock().unwrap_or_else(|p| p.into_inner());
+        locks.retain(|_, l| Arc::strong_count(l) > 1);
+    }
+
     pub fn project_lock(&self, id: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self.locks.lock().unwrap();
         locks.entry(id.to_string()).or_default().clone()
