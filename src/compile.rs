@@ -173,9 +173,21 @@ async fn run(
     argv: &[String],
     deadline: Instant,
 ) -> std::io::Result<RunResult> {
+    run_env(state, dir, argv, &[], deadline).await
+}
+
+/// [`run`] with extra environment variables.
+async fn run_env(
+    state: &SharedState,
+    dir: &FsPath,
+    argv: &[String],
+    env: &[(&str, String)],
+    deadline: Instant,
+) -> std::io::Result<RunResult> {
     let mut full: Vec<String> = state.cfg.compile_wrapper.clone();
     full.extend_from_slice(argv);
     let mut cmd = Command::new(&full[0]);
+    cmd.envs(env.iter().map(|(k, v)| (*k, v.as_str())));
     cmd.args(&full[1..])
         .current_dir(dir)
         .stdin(Stdio::null())
@@ -225,6 +237,47 @@ fn stem(main: &str) -> String {
         .unwrap_or_else(|| main.to_string())
 }
 
+/// The main file's directory relative to the project root (`""` for a main file at
+/// the root).
+fn main_dir(main: &str) -> &str {
+    main.rsplit_once('/').map_or("", |(d, _)| d)
+}
+
+/// File lookup for TeX when the main file is in a subfolder, as on Overleaf and as folio
+/// does it: TeX runs in the project root, so root-relative paths resolve, and the main
+/// file's directory comes next on the search paths (its class files, `\input`s and
+/// `.bib`s). The trailing `:` keeps the TeX Live defaults.
+fn tex_search_env(main: &str) -> Vec<(&'static str, String)> {
+    let d = main_dir(main);
+    if d.is_empty() {
+        return Vec::new();
+    }
+    let path = format!(".:{d}:");
+    ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS"]
+        .into_iter()
+        .map(|k| (k, path.clone()))
+        .collect()
+}
+
+/// pdflatex writes its outputs to the current directory; with a main file in a
+/// subfolder they must land next to it (`<stem>.pdf`, `.log`, `.synctex.gz`). TeX also
+/// writes the `.aux` of every `\include`d file at that file's path below the output
+/// directory, so the project's directories are mirrored there.
+fn tex_output_dir(dir: &FsPath, main: &str) -> Option<String> {
+    let d = main_dir(main);
+    if d.is_empty() {
+        return None;
+    }
+    let out = dir.join(d);
+    let prefix = format!("{d}/");
+    for (rel, _, meta) in walk(dir) {
+        if meta.is_dir() && rel != d && !rel.starts_with(&prefix) {
+            let _ = std::fs::create_dir_all(out.join(&rel));
+        }
+    }
+    Some(d.to_string())
+}
+
 async fn compile_pdflatex(
     state: &SharedState,
     dir: &FsPath,
@@ -233,39 +286,44 @@ async fn compile_pdflatex(
 ) -> std::io::Result<(String, bool)> {
     let s = stem(main);
     let mut transcript = String::new();
+    let env = tex_search_env(main);
+    let outdir = tex_output_dir(dir, main);
     if tools().latexmk {
-        let r = run(
-            state,
-            dir,
-            &[
-                "latexmk",
-                "-pdf",
-                "-f",
-                "-interaction=nonstopmode",
-                "-file-line-error",
-                "-synctex=1",
-                main,
-            ]
-            .map(String::from),
-            deadline,
-        )
-        .await?;
+        let mut argv = [
+            "latexmk",
+            "-pdf",
+            "-f",
+            "-interaction=nonstopmode",
+            "-file-line-error",
+            "-synctex=1",
+        ]
+        .map(String::from)
+        .to_vec();
+        if let Some(o) = &outdir {
+            argv.push(format!("-outdir={o}"));
+        }
+        argv.push(main.to_string());
+        let r = run_env(state, dir, &argv, &env, deadline).await?;
         let log = std::fs::read_to_string(dir.join(format!("{s}.log")))
             .unwrap_or_else(|_| r.output.clone());
         return Ok((log, r.timed_out));
     }
     // Manual pipeline: pdflatex → (bibtex|biber) → pdflatex (until references settle).
-    let tex = [
+    let mut tex = [
         "pdflatex",
         "-interaction=nonstopmode",
         "-file-line-error",
         "-synctex=1",
-        main,
     ]
-    .map(String::from);
+    .map(String::from)
+    .to_vec();
+    if let Some(o) = &outdir {
+        tex.push(format!("-output-directory={o}"));
+    }
+    tex.push(main.to_string());
     let mut bib_done = false;
     for pass in 0..4 {
-        let r = run(state, dir, &tex, deadline).await?;
+        let r = run_env(state, dir, &tex, &env, deadline).await?;
         if r.timed_out {
             return Ok((transcript, true));
         }
@@ -277,11 +335,11 @@ async fn compile_pdflatex(
             bib_done = true;
             let aux = std::fs::read_to_string(dir.join(format!("{s}.aux"))).unwrap_or_default();
             if dir.join(format!("{s}.bcf")).exists() && which("biber") {
-                let b = run(state, dir, &["biber".into(), s.clone()], deadline).await?;
+                let b = run_env(state, dir, &["biber".into(), s.clone()], &env, deadline).await?;
                 transcript.push_str(&b.output);
                 rerun = true;
             } else if aux.contains("\\bibdata") && which("bibtex") {
-                let b = run(state, dir, &["bibtex".into(), s.clone()], deadline).await?;
+                let b = run_env(state, dir, &["bibtex".into(), s.clone()], &env, deadline).await?;
                 transcript.push_str(&b.output);
                 rerun = true;
             }
@@ -842,6 +900,29 @@ pub async fn synctex_from_code(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tex_finds_root_and_main_dir_files() {
+        assert_eq!(main_dir("main.tex"), "");
+        assert_eq!(main_dir("paper/neurips/main.tex"), "paper/neurips");
+        assert!(tex_search_env("main.tex").is_empty());
+        let env = tex_search_env("neurips26/main.tex");
+        assert_eq!(env.len(), 3);
+        assert!(env.iter().all(|(_, v)| v == ".:neurips26:"), "{env:?}");
+
+        let dir = std::env::temp_dir().join(format!("ll-outdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("neurips26")).unwrap();
+        std::fs::create_dir_all(dir.join("body/figs")).unwrap();
+        assert_eq!(tex_output_dir(&dir, "main.tex"), None);
+        assert_eq!(
+            tex_output_dir(&dir, "neurips26/main.tex").as_deref(),
+            Some("neurips26")
+        );
+        assert!(dir.join("neurips26/body/figs").is_dir());
+        assert!(!dir.join("neurips26/neurips26").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn xelatex_and_lualatex_are_incompatible() {
