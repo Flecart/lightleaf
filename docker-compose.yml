@@ -5,6 +5,9 @@
 #
 # With automatic HTTPS (set LIGHTLEAF_DOMAIN in .env and point DNS at this host):
 #   docker compose --profile https up -d
+#
+# With the optional AI reviewer (set the reviewer variables in .env, see .env.example):
+#   docker compose --profile review up -d       (profiles combine: --profile https --profile review)
 services:
   lightleaf:
     build: .
@@ -39,6 +42,26 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+
+  # Optional AI review service (reviewer/). Not reachable from outside: Lightleaf calls it on the
+  # internal network, and it reaches Lightleaf's git endpoint at http://lightleaf:8080.
+  # If it is stopped or broken, Lightleaf keeps working and the Review dialog reports it.
+  reviewer:
+    build:
+      context: .
+      dockerfile: reviewer/Dockerfile
+    image: ${LIGHTLEAF_REVIEWER_IMAGE:-lightleaf-reviewer:latest}
+    profiles: [review]
+    restart: unless-stopped
+    env_file: .env
+    mem_limit: ${LIGHTLEAF_REVIEWER_MEMORY:-512m}
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   lightleaf-data:

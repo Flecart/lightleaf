@@ -17,7 +17,10 @@ FROM rust:1-bookworm AS server
 WORKDIR /src
 # Build dependencies first so they are cached across source changes.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src frontend/dist && echo 'fn main() {}' > src/main.rs \
+# The workspace also lists the (separately built) reviewer crate; a stub is enough here.
+COPY reviewer/Cargo.toml reviewer/Cargo.toml
+RUN mkdir -p src frontend/dist reviewer/src && echo 'fn main() {}' > src/main.rs \
+ && echo 'fn main() {}' > reviewer/src/main.rs \
  && cargo build --release && rm -rf src target/release/deps/lightleaf* target/release/lightleaf*
 COPY src ./src
 COPY --from=web /web/dist ./frontend/dist
