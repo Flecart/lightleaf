@@ -141,7 +141,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            apply(&dir, "main.tex", &notes, "ANG").unwrap(),
+            apply(&dir, "main.tex", &notes, "AI").unwrap(),
             Applied {
                 written: 2,
                 skipped: 1
@@ -149,9 +149,9 @@ mod tests {
         );
         let main = std::fs::read_to_string(dir.join("main.tex")).unwrap();
         assert!(main.contains("\\usepackage{lightleaf-comments}"));
-        assert!(main.contains("always better. \\ANG[AI: Results, critical]{\"Always\" is not supported by the experiments.}\n"));
+        assert!(main.contains("always better. \\AI[Results, critical]{\"Always\" is not supported by the experiments.}\n"));
         assert!(dir.join("lightleaf-comments.sty").exists());
-        assert_eq!(clear(&dir, "ANG").unwrap(), 2);
+        assert_eq!(clear(&dir, "AI").unwrap(), 2);
         assert_eq!(
             std::fs::read_to_string(dir.join("sec/a.tex")).unwrap(),
             "Results are in Table 1 and look good.\n"

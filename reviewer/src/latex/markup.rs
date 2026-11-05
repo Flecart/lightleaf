@@ -1,4 +1,4 @@
-//! The comment macro (`\ANG[AI: label]{text}` by default), its removal, and the
+//! The comment macro (`\AI[label]{text}` by default), its removal, and the
 //! `lightleaf-comments` package that defines it.
 
 use super::{PACKAGE, braced, code_part};
@@ -26,39 +26,46 @@ pub fn escape(s: &str) -> String {
     out
 }
 
-/// The macro text for one AI comment.
+/// The macro text for one comment: ` \<macro>[<label>]{<escaped text>}` (leading space included).
 pub fn comment_macro(macro_name: &str, label: &str, text: &str) -> String {
     let label: String = label
+        .replace('&', "and")
         .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | ',' | '-' | ':' | '&'))
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | ',' | '-' | ':'))
         .collect();
-    format!(
-        " \\{macro_name}[AI: {}]{{{}}}",
-        label.replace('&', "and"),
-        escape(text)
-    )
+    format!(" \\{macro_name}[{label}]{{{}}}", escape(text))
 }
 
-/// Removes every `\macro[AI…]{…}` from `text`. Returns the new text and how many were removed.
+/// Length of a `\<macro>[…]{…}` or `\<macro>{…}` occurrence at the start of `s`, if well formed.
+fn macro_len(s: &str, macro_name: &str) -> Option<usize> {
+    let mut i = macro_name.len() + 1;
+    // `\AI` must not be the prefix of a longer command such as `\AIbox`.
+    if s[i..].starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    let rest = &s[i..];
+    let trimmed = rest.trim_start_matches([' ', '\t']);
+    i += rest.len() - trimmed.len();
+    if trimmed.starts_with('[') {
+        i += trimmed.find(']')? + 1;
+        let rest = &s[i..];
+        i += rest.len() - rest.trim_start_matches([' ', '\t']).len();
+    }
+    braced(&s[i..]).map(|(_, used)| i + used)
+}
+
+/// Removes every `\<macro>[…]{…}` and `\<macro>{…}` (and the space before it) from `text`.
+/// The macro is reserved for review comments, so all of them are removed.
+/// Returns the new text and how many were removed.
 pub fn remove_comments(text: &str, macro_name: &str) -> (String, usize) {
-    let needle = format!("\\{macro_name}[AI");
+    let needle = format!("\\{macro_name}");
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     let mut n = 0;
     while let Some(i) = rest.find(&needle) {
-        let after = &rest[i + needle.len()..];
-        let parsed = after.find(']').and_then(|close| {
-            let tail = &after[close + 1..];
-            let skip = tail.len() - tail.trim_start_matches([' ', '\t']).len();
-            braced(&tail[skip..]).map(|(_, used)| needle.len() + close + 1 + skip + used)
-        });
-        match parsed {
+        match macro_len(&rest[i..], macro_name) {
             Some(len) => {
-                let mut head = &rest[..i];
-                if head.ends_with(' ') {
-                    head = &head[..head.len() - 1];
-                }
-                out.push_str(head);
+                out.push_str(rest[..i].strip_suffix(' ').unwrap_or(&rest[..i]));
                 rest = &rest[i + len..];
                 n += 1;
             }
@@ -130,15 +137,15 @@ mod tests {
 
     #[test]
     fn escapes_and_round_trips_comments() {
-        let m = comment_macro("ANG", "Methods, warning", "Use 50% less & cite {x}_1 \\o/");
+        let m = comment_macro("AI", "Methods, warning", "Use 50% less & cite {x}_1 \\o/");
         assert_eq!(
             m,
-            " \\ANG[AI: Methods, warning]{Use 50\\% less \\& cite \\{x\\}\\_1 \\textbackslash{}o/}"
+            " \\AI[Methods, warning]{Use 50\\% less \\& cite \\{x\\}\\_1 \\textbackslash{}o/}"
         );
-        let text = format!("A sentence.{m}\nB \\ANG{{human note}} c.");
-        let (clean, n) = remove_comments(&text, "ANG");
-        assert_eq!(n, 1);
-        assert_eq!(clean, "A sentence.\nB \\ANG{human note} c.");
+        let text = format!("A sentence.{m}\nB \\AI{{plain}} c \\AIbox{{keep}} \\ANG{{human}}.");
+        let (clean, n) = remove_comments(&text, "AI");
+        assert_eq!(n, 2);
+        assert_eq!(clean, "A sentence.\nB c \\AIbox{keep} \\ANG{human}.");
     }
 
     #[test]

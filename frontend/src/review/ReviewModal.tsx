@@ -74,7 +74,7 @@ export function ReviewModal(props: ReviewProps) {
   }, [job]);
 
   const start = async (kind: 'review' | 'clear') => {
-    if (kind === 'clear' && !confirm('Remove every AI comment (\\ANG[AI: …]{…}) from the project? Your own comments are kept.')) return;
+    if (kind === 'clear' && !confirm('Remove every AI comment (\\AI[…]{…}) from the project?')) return;
     setBusy(true);
     try {
       localStorage.setItem('ll-review-venue', venue);
@@ -96,10 +96,9 @@ export function ReviewModal(props: ReviewProps) {
     <Modal title="AI review" onClose={props.onClose} wide>
       <p class="muted">
         A team of AI reviewers reads the whole paper and writes its comments straight into the LaTeX source as{' '}
-        <code>\ANG[AI: …]{'{…}'}</code>, so they appear in the PDF next to the text they are about. They arrive as one commit
+        <code>\AI[…]{'{…}'}</code>, so they appear in the PDF next to the text they are about. They arrive as one commit
         in <strong>History</strong>: revert it, remove them below, or hide them all with{' '}
-        <code>\usepackage[hide]{'{lightleaf-comments}'}</code>. You can write your own comments the same way: <code>\ANG{'{…}'}</code>.
-      </p>
+        <code>\usepackage[hide]{'{lightleaf-comments}'}</code>. The <code>\AI</code> command is reserved for these comments; use another command for your own notes.</p>
       {unavailable && <div class="alert error">{unavailable}</div>}
 
       {active ? (

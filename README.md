@@ -233,9 +233,9 @@ cargo test
 
 A separate service, [`lightleaf-reviewer`](reviewer/README.md), can review your paper with a team of AI reviewers
 (abstract, method, results, writing, LaTeX, figures, venue fit, …). It writes their comments **into the LaTeX
-source** as `\ANG[AI: Results, warning]{…}`, so they show up in the PDF next to the text they're about. There's
+source** as `\AI[Results, warning]{…}`, so they show up in the PDF next to the text they're about. There's
 no comment database: comments are git history, can be reverted, removed in one click, or hidden with
-`\usepackage[hide]{lightleaf-comments}`. Write your own the same way: `\ANG{…}`.
+`\usepackage[hide]{lightleaf-comments}`.
 
 It's fully isolated: a separate process and container that touches projects only through git, using a short-lived
 token scoped to one project. Leave `LIGHTLEAF_REVIEWER_URL` unset and the feature doesn't exist. If the

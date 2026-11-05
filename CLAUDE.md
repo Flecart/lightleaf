@@ -113,8 +113,8 @@ LIGHTLEAF_REVIEWER_URL=http://127.0.0.1:18090 LIGHTLEAF_REVIEWER_SECRET=<same> .
 # then: POST /api/projects/<id>/review, poll GET /api/projects/<id>/review, check `git log` in the project dir
 ```
 
-- Comments are `\ANG[AI: <Agent>, <severity>]{text}` (macro name: `LIGHTLEAF_REVIEW_MACRO`). Human comments are
-  `\ANG{…}` / `\ANG[Name]{…}`. "Clear" removes only labels starting with `AI`.
+- Comments are `\AI[<Agent>, <severity>]{text}` (macro name: `LIGHTLEAF_REVIEW_MACRO`). The macro is reserved
+  for review comments: "Clear" removes every `\AI[…]{…}` and `\AI{…}` (but not longer commands like `\AIbox`).
 - Insertion rules (`reviewer/src/latex.rs::insertion_point`) are the riskiest code: any change needs a unit test,
   and a compile check of the result (`pdflatex` on a document that uses the macro in titles, captions,
   footnotes, lists and math, with each package option).

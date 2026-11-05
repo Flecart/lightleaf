@@ -21,7 +21,7 @@ pub struct Config {
     pub effort: String,
     /// Send `fallbacks: "default"` (disable for gateways that do not support it).
     pub fallbacks: bool,
-    /// Name of the comment macro (`\ANG` by default).
+    /// Name of the comment macro (`\AI` by default); reserved for review comments.
     pub macro_name: String,
     pub max_comments: usize,
     pub max_jobs: usize,
@@ -52,7 +52,7 @@ impl Config {
         let secret = env("LIGHTLEAF_REVIEWER_SECRET")
             .filter(|s| s.len() >= 16)
             .ok_or_else(|| anyhow::anyhow!("LIGHTLEAF_REVIEWER_SECRET (16+ characters, same value as in Lightleaf) is required"))?;
-        let macro_name = env("LIGHTLEAF_REVIEW_MACRO").unwrap_or_else(|| "ANG".into());
+        let macro_name = env("LIGHTLEAF_REVIEW_MACRO").unwrap_or_else(|| "AI".into());
         anyhow::ensure!(
             !macro_name.is_empty() && macro_name.chars().all(|c| c.is_ascii_alphabetic()),
             "LIGHTLEAF_REVIEW_MACRO must contain only letters (it becomes a LaTeX command name)"

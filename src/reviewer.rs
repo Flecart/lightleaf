@@ -3,7 +3,7 @@
 //! The reviewer is a separate process. Lightleaf only:
 //! 1. issues a short-lived git token restricted to one project,
 //! 2. asks the reviewer to start a job (the reviewer clones the project over git, writes its
-//!    comments into the LaTeX source as `\ANG[AI: …]{…}` macros, and pushes a commit), and
+//!    comments into the LaTeX source as `\AI[…]{…}` macros, and pushes a commit), and
 //! 3. relays job status to the browser.
 //!
 //! Nothing else in Lightleaf depends on this module. When `LIGHTLEAF_REVIEWER_URL` is unset the
@@ -233,7 +233,7 @@ pub async fn start(
     relay(call(cfg(&state)?, "POST", "/v1/jobs", Some(&payload)).await?)
 }
 
-/// Removes every AI comment (`\ANG[AI…]{…}`) from the project, as one commit.
+/// Removes every AI comment (`\AI[…]{…}`) from the project, as one commit.
 pub async fn clear(
     State(state): State<SharedState>,
     user: User,

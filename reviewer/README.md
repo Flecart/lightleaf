@@ -4,15 +4,16 @@ An optional service that reviews a LaTeX paper the way a careful co-author would
 the source**, right after the passage they are about:
 
 ```latex
-We show that our method is always better. \ANG[AI: Results, critical]{"Always" is not supported: Table 2 shows two datasets where the baseline wins. Qualify the claim.}
+We show that our method is always better. \AI[Results, critical]{"Always" is not supported: Table 2 shows two datasets where the baseline wins. Qualify the claim.}
 ```
 
 The comments appear in the PDF (in colour, inline or in the margin). They are ordinary text in your project, so
 there is no comment database: they live in git like everything else.
 
-- **Your own comments** use the same macro: `\ANG{check this number}` or `\ANG[Alice]{…}`.
+- **`\AI` is reserved for these comments.** Use a different command for your own notes (any name
+  except `\AI`), so removing AI comments never touches them.
 - **Hide them all** for submission: `\usepackage[hide]{lightleaf-comments}` (or `[margin]` to move them to the margin).
-- **Remove the AI ones**: *Review → Remove AI comments* removes every `\ANG[AI…]{…}` and keeps yours. You can
+- **Remove the AI ones**: *Review → Remove AI comments* removes every `\AI[…]{…}`. You can
   also revert the reviewer's commit in **History**.
 
 ## How it works
@@ -118,7 +119,7 @@ Reviewer side:
 | `LIGHTLEAF_REVIEWER_BIND` | `127.0.0.1:8090` (`0.0.0.0:8090` in Docker) | Listen address |
 | `LIGHTLEAF_REVIEW_MODEL` | `claude-opus-5-5` / `gpt-5.2-chat-latest` | Model, per provider |
 | `LIGHTLEAF_REVIEW_EFFORT` | `high` | Anthropic only: `low` … `max`, depth versus cost |
-| `LIGHTLEAF_REVIEW_MACRO` | `ANG` | Name of the comment command (letters only) |
+| `LIGHTLEAF_REVIEW_MACRO` | `AI` | Name of the comment command (letters only) |
 | `LIGHTLEAF_REVIEW_MAX_COMMENTS` | `40` | Comments kept per review |
 | `LIGHTLEAF_REVIEW_MAX_JOBS` | `2` | Reviews running at once (others queue) |
 | `LIGHTLEAF_REVIEW_AGENT_CONCURRENCY` | `6` | Parallel model calls per review |

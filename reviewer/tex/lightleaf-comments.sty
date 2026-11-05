@@ -1,8 +1,10 @@
 % lightleaf-comments.sty -- review comments written directly in the LaTeX source.
 %
-%   \@@MACRO@@{text}           a comment, shown in the PDF
-%   \@@MACRO@@[label]{text}    a comment with a label (e.g. a name); the Lightleaf AI reviewer
-%                              writes \@@MACRO@@[AI: <area>, <severity>]{text}
+%   \@@MACRO@@[<area>, <severity>]{text}   a comment from the Lightleaf AI reviewer
+%   \@@MACRO@@{text}                       a comment without a label
+%
+% The command is reserved for review comments: "Remove AI comments" in Lightleaf deletes every
+% \@@MACRO@@ in the project. Use a different command for your own notes.
 %
 % Package options:
 %   inline  (default)  comments appear in the text, in colour
@@ -21,19 +23,16 @@
 \DeclareOption{inline}{\llc@marginfalse}
 \ProcessOptions\relax
 
-\definecolor{llc@human}{RGB}{176,32,48}
-\definecolor{llc@ai}{RGB}{24,86,190}
-\newcommand\llc@defaultlabel{@@MACRO@@}
+\definecolor{llc@color}{RGB}{24,86,190}
 
-% #1 label, #2 text. Labels starting with "AI:" are drawn in blue, others in red.
+% #1 label (may be empty), #2 text.
 \newcommand\llc@render[2]{%
   \begingroup
-  \in@{AI:}{#1}%
-  \ifin@\color{llc@ai}\else\color{llc@human}\fi
-  \textbf{[#1]}~\textit{#2}%
+  \color{llc@color}%
+  \textbf{[@@MACRO@@\if\relax\detokenize{#1}\relax\else: #1\fi]}~\textit{#2}%
   \endgroup}
 
-\DeclareRobustCommand\llc@comment[2][\llc@defaultlabel]{%
+\DeclareRobustCommand\llc@comment[2][]{%
   \ifllc@hide
     \@bsphack\@esphack
   \else
