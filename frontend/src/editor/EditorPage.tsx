@@ -546,7 +546,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
             <div class="settings-grid">
               <label>Compiler</label>
               <select disabled={!canWrite} value={project.compiler} onChange={async (e) => { await patch(`/api/projects/${pid}`, { compiler: e.currentTarget.value }); loadProject(); }}>
-                {['pdflatex', 'xelatex', 'lualatex', 'tectonic', 'typst'].map((c) => (
+                {['pdflatex', 'xelatex', 'lualatex', 'tectonic', 'folio', 'typst'].map((c) => (
                   <option value={c} disabled={!project.compilers?.includes(c)}>{c}{project.compilers?.includes(c) ? '' : ' (not installed)'}</option>
                 ))}
               </select>

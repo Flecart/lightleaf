@@ -1,5 +1,5 @@
 //! Compilation of LaTeX (pdflatex / xelatex / lualatex, optionally through latexmk or
-//! tectonic) and Typst projects, plus SyncTeX lookups.
+//! tectonic, or the experimental folio compiler) and Typst projects, plus SyncTeX lookups.
 //!
 //! Sources are mirrored incrementally into a per-project build directory so auxiliary files
 //! never pollute the git repository and reruns stay fast. A global semaphore caps the number
@@ -48,10 +48,12 @@ fn tools() -> &'static Tools {
     T.get_or_init(|| Tools {
         latexmk: which("latexmk") && which("perl"),
         synctex: which("synctex"),
-        compilers: ["pdflatex", "xelatex", "lualatex", "tectonic", "typst"]
-            .into_iter()
-            .filter(|c| which(c))
-            .collect(),
+        compilers: [
+            "pdflatex", "xelatex", "lualatex", "tectonic", "folio", "typst",
+        ]
+        .into_iter()
+        .filter(|c| which(c))
+        .collect(),
     })
 }
 
@@ -62,7 +64,7 @@ pub fn available_compilers() -> Vec<&'static str> {
 pub fn is_known_compiler(c: &str) -> bool {
     matches!(
         c,
-        "pdflatex" | "xelatex" | "lualatex" | "tectonic" | "typst"
+        "pdflatex" | "xelatex" | "lualatex" | "tectonic" | "folio" | "typst"
     )
 }
 
@@ -290,6 +292,103 @@ async fn compile_latex(
         }
     }
     Ok((transcript, false))
+}
+
+/// Compiles with folio (<https://github.com/flecart/folio>), a LaTeX compiler written in Rust.
+/// Folio handles bibliographies in process and has no SyncTeX output. Documents that use
+/// constructs folio does not support are handed to slimtex by folio itself
+/// (`--fallback=auto`), which leaves an ordinary TeX log next to the PDF.
+async fn compile_folio(
+    state: &SharedState,
+    dir: &FsPath,
+    main: &str,
+    deadline: Instant,
+) -> std::io::Result<(String, bool, Vec<Issue>)> {
+    let s = stem(main);
+    // Outputs of an earlier run with another engine would be mistaken for this run's:
+    // a stale .log for slimtex's, a stale .synctex.gz for a PDF it does not describe.
+    for ext in ["log", "synctex.gz"] {
+        let _ = tokio::fs::remove_file(dir.join(format!("{s}.{ext}"))).await;
+    }
+    let argv = ["folio", "--color=never", "-o", &format!("{s}.pdf"), main].map(String::from);
+    let r = run(state, dir, &argv, deadline).await?;
+    let mut issues = parse_folio(&r.output);
+    let mut log = r.output;
+    if let Ok(tex) = std::fs::read_to_string(dir.join(format!("{s}.log"))) {
+        issues.extend(parse_latex_log(&tex));
+        log.push('\n');
+        log.push_str(&tex);
+    }
+    Ok((log, r.timed_out, issues))
+}
+
+/// Header line of a folio diagnostic: `error[E0103]: message`, `warning: message`,
+/// `fatal: message`. Returns the severity label and the message.
+fn folio_header(l: &str) -> Option<(&str, &str)> {
+    let (head, msg) = l.split_once(": ")?;
+    let (sev, code) = head.split_once('[').unwrap_or((head, "]"));
+    let code_ok = code
+        .strip_suffix(']')
+        .is_some_and(|c| c.chars().all(|c| c.is_ascii_alphanumeric()));
+    (matches!(sev, "fatal" | "error" | "warning" | "note") && code_ok).then_some((sev, msg))
+}
+
+/// Parses folio's rustc-style diagnostics:
+///
+/// ```text
+/// error[E0103]: `\end{enumerate}` closes `\begin{itemize}`
+///  --> main.tex:1:24
+///   |
+/// 1 | \begin{itemize}\item ok\end{enumerate}
+///   |                        ^^^^^^^^^^^^^^^ expected `\end{itemize}`
+/// ```
+///
+/// Notes are informational and stay in the log only.
+fn parse_folio(output: &str) -> Vec<Issue> {
+    let lines: Vec<&str> = output.lines().collect();
+    let mut issues = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        let Some((sev, msg)) = folio_header(l) else {
+            continue;
+        };
+        let level = match sev {
+            "fatal" | "error" => "error",
+            "warning" => "warning",
+            _ => continue,
+        };
+        let body: Vec<&str> = lines[i + 1..]
+            .iter()
+            .take_while(|b| !b.trim().is_empty() && folio_header(b).is_none())
+            .copied()
+            .collect();
+        let loc = body
+            .iter()
+            .find_map(|b| b.trim_start().strip_prefix("--> "));
+        let (file, line) = loc
+            .and_then(|loc| {
+                let mut p = loc.rsplitn(3, ':');
+                let _col = p.next();
+                let line = p.next()?.parse().ok()?;
+                Some((
+                    Some(p.next()?.trim_start_matches("./").to_string()),
+                    Some(line),
+                ))
+            })
+            .unwrap_or((None, None));
+        issues.push(Issue {
+            level,
+            file,
+            line,
+            message: msg.to_string(),
+            context: body
+                .iter()
+                .filter(|b| !b.trim_start().starts_with("--> "))
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n"),
+        });
+    }
+    issues
 }
 
 fn parse_latex_log(log: &str) -> Vec<Issue> {
@@ -538,6 +637,8 @@ pub async fn compile(
         .await?;
         let issues = parse_typst(&r.output);
         (r.output, r.timed_out, issues)
+    } else if compiler == "folio" {
+        compile_folio(&state, &build, &main, deadline).await?
     } else {
         let (log, t) = compile_latex(&state, &build, &compiler, &main, deadline).await?;
         let issues = parse_latex_log(&log);
@@ -573,7 +674,7 @@ pub async fn compile(
         "pdf": if ok { Some(format!("/api/projects/{id}/output/output.pdf?t={}", crate::util::now_ms())) } else { None },
         "issues": issues,
         "log": full_log,
-        "synctex": compiler != "typst" && tools().synctex,
+        "synctex": !matches!(compiler.as_str(), "typst" | "folio") && tools().synctex,
         "mainFile": main,
     });
     state.remember_compile(key, started, result.clone());
@@ -750,5 +851,35 @@ mod tests {
         assert_eq!(is.len(), 2);
         assert_eq!(is[0].line, Some(3));
         assert_eq!(is[1].file.as_deref(), Some("chap/a.typ"));
+    }
+
+    #[test]
+    fn parses_folio() {
+        let out = "\
+note: compiling `main.tex` with slimtex (--fallback=auto) because it uses constructs
+error[E0103]: `\\end{enumerate}` closes `\\begin{itemize}`
+ --> ./main.tex:12:24
+  |
+12 | \\begin{itemize}\\item ok\\end{enumerate}
+  |                        ^^^^^^^^^^^^^^^ expected `\\end{itemize}`
+
+warning[W0201]: unknown package `foo`; ignored
+
+note[N0001]: just so you know
+
+fatal: cannot read `x.tex`: No such file or directory
+main.tex: 2 error(s), 1 warning(s)
+";
+        let is = parse_folio(out);
+        assert_eq!(is.len(), 3, "{is:?}");
+        assert_eq!(is[0].level, "error");
+        assert_eq!(is[0].file.as_deref(), Some("main.tex"));
+        assert_eq!(is[0].line, Some(12));
+        assert!(is[0].context.contains("^^^"));
+        assert!(!is[0].context.contains("-->"));
+        assert_eq!((is[1].level, is[1].line), ("warning", None));
+        assert_eq!(is[1].message, "unknown package `foo`; ignored");
+        assert_eq!(is[2].level, "error");
+        assert!(is[2].message.starts_with("cannot read"));
     }
 }
