@@ -32,7 +32,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 use yrs::{
     Doc, GetString, OffsetKind, Options, ReadTxn, StateVector, Text, TextRef, Transact, Update,
     updates::{decoder::Decode, encoder::Encode},
@@ -51,6 +51,26 @@ const COLORS: [&str; 10] = [
     "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#46a0a0", "#f032e6", "#808000",
     "#9a6324", "#000075",
 ];
+
+/// Messages queued per client before it is considered too slow and disconnected.
+/// The browser reconnects and resyncs its documents, so nothing is lost.
+const OUTBOX_CAPACITY: usize = 2048;
+
+/// A client's bounded outgoing queue. Memory per client stays bounded no matter how slow its
+/// network is, so one stalled tab cannot grow the server's memory without limit.
+#[derive(Clone)]
+struct Outbox {
+    tx: mpsc::Sender<Message>,
+    kick: Arc<Notify>,
+}
+
+impl Outbox {
+    fn send(&self, msg: Message) {
+        if let Err(mpsc::error::TrySendError::Full(_)) = self.tx.try_send(msg) {
+            self.kick.notify_one();
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Hub {
@@ -73,7 +93,7 @@ struct RoomInner {
 }
 
 struct Client {
-    tx: mpsc::UnboundedSender<Message>,
+    tx: Outbox,
     user: User,
     can_write: bool,
     color: &'static str,
@@ -217,7 +237,7 @@ impl Room {
         let inner = self.inner.lock().unwrap();
         for (id, c) in &inner.clients {
             if Some(*id) != except {
-                let _ = c.tx.send(msg.clone());
+                c.tx.send(msg.clone());
             }
         }
     }
@@ -303,7 +323,7 @@ impl Room {
                 let msg = frame(MSG_UPDATE, &path, &update);
                 for id in subs {
                     if let Some(c) = inner.clients.get(&id) {
-                        let _ = c.tx.send(msg.clone());
+                        c.tx.send(msg.clone());
                     }
                 }
             }
@@ -403,7 +423,7 @@ impl Room {
             .insert(user.id, (user.name.clone(), user.email.clone()));
         for id in subs {
             if let Some(c) = inner.clients.get(&id) {
-                let _ = c.tx.send(raw.clone());
+                c.tx.send(raw.clone());
             }
         }
         Ok(())
@@ -416,7 +436,7 @@ impl Room {
                 if *id != cid
                     && let Some(c) = inner.clients.get(id)
                 {
-                    let _ = c.tx.send(raw.clone());
+                    c.tx.send(raw.clone());
                 }
             }
         }
@@ -513,7 +533,12 @@ async fn client_loop(
     socket: WebSocket,
 ) {
     let (mut sink, mut stream) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (sender, mut rx) = mpsc::channel::<Message>(OUTBOX_CAPACITY);
+    let kick = Arc::new(Notify::new());
+    let tx = Outbox {
+        tx: sender,
+        kick: kick.clone(),
+    };
     let cid = state.hub.next_id.fetch_add(1, Ordering::Relaxed) + 1;
     let room = state.hub.room(&pid, root.clone());
     {
@@ -530,7 +555,7 @@ async fn client_loop(
             },
         );
     }
-    let _ = tx.send(json_msg(
+    tx.send(json_msg(
         json!({ "type": "hello", "clientId": cid, "role": role.as_str() }),
     ));
     room.broadcast_presence();
@@ -544,7 +569,17 @@ async fn client_loop(
         }
     });
 
-    while let Some(Ok(msg)) = stream.next().await {
+    loop {
+        let msg = tokio::select! {
+            m = stream.next() => match m {
+                Some(Ok(m)) => m,
+                _ => break,
+            },
+            _ = kick.notified() => {
+                tracing::info!("disconnecting slow client {cid} of project {pid}");
+                break;
+            }
+        };
         match msg {
             Message::Binary(data) => {
                 let Some((kind, path, payload)) = parse_frame(&data) else {
@@ -568,10 +603,10 @@ async fn client_loop(
                         };
                         match room.join(cid, &path, payload, disk) {
                             Ok(m) => {
-                                let _ = tx.send(m);
+                                tx.send(m);
                             }
                             Err(e) => {
-                                let _ = tx.send(json_msg(
+                                tx.send(json_msg(
                                     json!({ "type": "error", "path": path, "error": e }),
                                 ));
                             }
@@ -586,7 +621,7 @@ async fn client_loop(
                         if let Err(e) =
                             room.update(cid, &path, payload, Message::Binary(data.clone()))
                         {
-                            let _ = tx.send(json_msg(
+                            tx.send(json_msg(
                                 json!({ "type": "error", "path": path, "error": e }),
                             ));
                         }
@@ -627,7 +662,7 @@ async fn client_loop(
                     room.broadcast_json(json!({ "type": "chat", "message": {
                         "id": id, "userId": user.id, "name": user.name, "body": body, "createdAt": ts } }));
                 } else if v["type"] == "ping" {
-                    let _ = tx.send(json_msg(json!({ "type": "pong" })));
+                    tx.send(json_msg(json!({ "type": "pong" })));
                 }
             }
             Message::Close(_) => break,
