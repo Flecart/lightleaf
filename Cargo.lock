@@ -792,6 +792,7 @@ dependencies = [
  "argon2",
  "axum",
  "base64 0.23.1",
+ "brotli",
  "flate2",
  "futures-util",
  "hex",

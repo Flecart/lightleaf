@@ -24,7 +24,13 @@ use axum::{
     routing::{delete, get, post},
 };
 use std::{net::SocketAddr, sync::Arc};
-use tower_http::{compression::CompressionLayer, set_header::SetResponseHeaderLayer};
+use tower_http::{
+    compression::{
+        CompressionLayer,
+        predicate::{NotForContentType, Predicate, SizeAbove},
+    },
+    set_header::SetResponseHeaderLayer,
+};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -62,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
     if let Some((email, password)) = cfg.bootstrap_admin.clone() {
         auth::bootstrap_admin(&state, &email, &password).await?;
     }
+
+    assets::warm();
 
     // Background flusher: persists dirty collaborative docs to disk and evicts idle ones.
     collab::spawn_flusher(state.clone());
@@ -162,7 +170,19 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api", api)
         .nest("/git", git_routes)
         .fallback(assets::static_handler)
-        .layer(CompressionLayer::new())
+        // Only compress what benefits: PDFs, zips, images and git packs are already compressed,
+        // and recompressing them on every download would be the biggest CPU cost after TeX.
+        .layer(
+            CompressionLayer::new().compress_when(
+                SizeAbove::new(1024)
+                    .and(NotForContentType::IMAGES)
+                    .and(NotForContentType::const_new("application/pdf"))
+                    .and(NotForContentType::const_new("application/zip"))
+                    .and(NotForContentType::const_new("application/octet-stream"))
+                    .and(NotForContentType::const_new("application/x-git"))
+                    .and(NotForContentType::const_new("font/")),
+            ),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             security::hsts,
