@@ -467,8 +467,17 @@ pub async fn compile(
     }
 
     // One compile per project at a time; queued globally by the semaphore.
+    let arrived = Instant::now();
     let build_lock = state.project_lock(&format!("build:{id}"));
     let _b = build_lock.lock().await;
+    // Coalescing: if a compile of the same document started after this request arrived, it
+    // already includes every edit this request could have wanted, so reuse its result. With
+    // auto-compile and several collaborators, a burst of N requests costs at most two compiles.
+    let key = format!("{id}\0{compiler}\0{main}");
+    if let Some(result) = state.recent_compile(&key, arrived) {
+        return Ok(Json(result));
+    }
+    let started = Instant::now();
     {
         let lock = state.project_lock(&id);
         let _g = lock.lock().await;
@@ -485,8 +494,8 @@ pub async fn compile(
         .acquire()
         .await
         .map_err(anyhow::Error::from)?;
-    let started = Instant::now();
-    let deadline = started + Duration::from_secs(state.cfg.compile_timeout_secs);
+    let compile_started = Instant::now();
+    let deadline = compile_started + Duration::from_secs(state.cfg.compile_timeout_secs);
     let s = stem(&main);
     let pdf = build.join(format!("{s}.pdf"));
     let _ = tokio::fs::remove_file(&pdf).await;
@@ -516,7 +525,7 @@ pub async fn compile(
         let issues = parse_latex_log(&log);
         (log, t, issues)
     };
-    let elapsed = started.elapsed().as_millis() as u64;
+    let elapsed = compile_started.elapsed().as_millis() as u64;
     let ok = tokio::fs::metadata(&pdf).await.is_ok();
     if ok {
         tokio::fs::copy(&pdf, build.join(".output.pdf")).await?;
@@ -539,7 +548,7 @@ pub async fn compile(
     } else {
         "failure"
     };
-    Ok(Json(json!({
+    let result = json!({
         "status": status,
         "durationMs": elapsed,
         "pdf": if ok { Some(format!("/api/projects/{id}/output/output.pdf?t={}", crate::util::now_ms())) } else { None },
@@ -547,7 +556,9 @@ pub async fn compile(
         "log": full_log,
         "synctex": compiler != "typst" && tools().synctex,
         "mainFile": main,
-    })))
+    });
+    state.remember_compile(key, started, result.clone());
+    Ok(Json(result))
 }
 
 pub async fn output(

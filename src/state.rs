@@ -20,6 +20,8 @@ pub struct AppState {
     /// Bounds concurrent Argon2 computations so a login flood cannot exhaust memory.
     pub hash_slots: Semaphore,
     pub limits: crate::security::Limits,
+    /// Last compile result per (project, compiler, main file), with the time it started.
+    recent_compiles: Mutex<HashMap<String, (std::time::Instant, serde_json::Value)>>,
     /// One async lock per project, serialising disk-level operations (flush, git, compile sync).
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -58,6 +60,7 @@ impl AppState {
             compile_slots: Semaphore::new(cfg.max_concurrent_compiles),
             hash_slots: Semaphore::new(4),
             limits: crate::security::Limits::default(),
+            recent_compiles: Mutex::new(HashMap::new()),
             cfg,
             db: Arc::new(Mutex::new(conn)),
             hub: Hub::default(),
@@ -79,6 +82,38 @@ impl AppState {
         .await
         .map_err(anyhow::Error::from)?;
         Ok(res?)
+    }
+
+    /// A compile result for `key` that started at or after `since`, if any.
+    pub fn recent_compile(
+        &self,
+        key: &str,
+        since: std::time::Instant,
+    ) -> Option<serde_json::Value> {
+        let m = self
+            .recent_compiles
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        m.get(key)
+            .filter(|(t, _)| *t >= since)
+            .map(|(_, v)| v.clone())
+    }
+
+    pub fn remember_compile(
+        &self,
+        key: String,
+        started: std::time::Instant,
+        result: serde_json::Value,
+    ) {
+        let mut m = self
+            .recent_compiles
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        // Only the coalescing window matters, so old entries can go.
+        if m.len() > 1000 {
+            m.retain(|_, (t, _)| t.elapsed() < std::time::Duration::from_secs(600));
+        }
+        m.insert(key, (started, result));
     }
 
     pub fn project_lock(&self, id: &str) -> Arc<tokio::sync::Mutex<()>> {
