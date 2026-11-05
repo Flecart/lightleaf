@@ -374,3 +374,14 @@ body.dragging iframe, body.dragging .pdf-scroll { pointer-events: none; }
 .dropzone:hover, .dropzone.over { border-color: var(--green); background: var(--green-l); }
 .dropzone .icon { color: var(--green); }
 .drop-overlay { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: color-mix(in srgb, var(--green) 18%, transparent); border: 4px dashed var(--green); font-size: 20px; font-weight: 600; color: var(--green); pointer-events: none; }
+
+/* AI review dialog (frontend/src/review) */
+.review-list { list-style: none; padding: 0; margin: 8px 0 0; max-height: 45vh; overflow: auto; }
+.review-item { padding: 8px 10px; border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--radius); margin-bottom: 6px; cursor: pointer; }
+.review-item:hover { background: var(--hover); }
+.review-item.sev-critical { border-left-color: #c62828; }
+.review-item.sev-warning { border-left-color: #ef8f00; }
+.review-item.sev-suggestion { border-left-color: #1e5bbf; }
+.review-meta { font-size: 12px; margin-bottom: 2px; }
+.review-meta .badge { margin-left: 0; margin-right: 4px; }
+.review-quote { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -6,6 +6,7 @@ import { CodeEditor, EditorHandle } from './CodeEditor';
 import { PdfHighlight, PdfViewer } from './PdfViewer';
 import { FileTree, TreeActions } from './FileTree';
 import { ChatPanel, GitModal, HistoryPanel, LogsPanel, ShareModal } from './Panels';
+import { ReviewEntry } from '../review/ReviewEntry';
 import { outline, OutlineItem } from './lang';
 
 const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#46a0a0', '#f032e6', '#808000', '#9a6324', '#000075'];
@@ -37,7 +38,7 @@ interface PromptState {
   onSubmit: (v: string) => Promise<void> | void;
 }
 
-export function EditorPage(props: { projectId: string; user: User }) {
+export function EditorPage(props: { projectId: string; user: User; reviewer?: boolean }) {
   const pid = props.projectId;
   const [project, setProject] = useState<Project | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -396,6 +397,7 @@ export function EditorPage(props: { projectId: string; user: User }) {
           <button class="tb-btn" onClick={() => setModal('share')}><Icon name="users" /> <span class="hide-sm">Share</span></button>
           <button class={`tb-btn ${panel === 'history' ? 'active' : ''}`} onClick={() => setPanel(panel === 'history' ? null : 'history')}><Icon name="history" /> <span class="hide-sm">History</span></button>
           <button class="tb-btn" onClick={() => setModal('git')}><Icon name="git" /> <span class="hide-sm">Git</span></button>
+          {props.reviewer && canWrite && <ReviewEntry projectId={pid} onFinished={compile} onOpenFile={openFile} />}
           <button class={`tb-btn ${chatOpen ? 'active' : ''}`} onClick={() => setChatOpen(!chatOpen)}><Icon name="chat" /> <span class="hide-sm">Chat</span></button>
           <div class="segmented dark">
             <button class={layout === 'editor' ? 'active' : ''} title="Editor only" onClick={() => setLayout('editor')}><Icon name="edit" /></button>

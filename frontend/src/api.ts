@@ -82,6 +82,8 @@ export interface PublicConfig {
   firstUser: boolean;
   compilers: string[];
   sourceUrl: string;
+  /** The optional AI review service is configured. */
+  reviewer: boolean;
   version: string;
 }
 

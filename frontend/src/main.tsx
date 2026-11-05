@@ -57,7 +57,7 @@ function App() {
   }
 
   const m = hash.match(/^\/project\/([0-9a-f]+)/);
-  if (m) return <EditorPage key={m[1]} projectId={m[1]!} user={user} />;
+  if (m) return <EditorPage key={m[1]} projectId={m[1]!} user={user} reviewer={config.reviewer} />;
   if (hash === '/settings') return <SettingsPage user={user} config={config} onLogout={() => setUser(null)} />;
   if (hash === '/admin' && user.is_admin) return <AdminPage user={user} config={config} />;
   return <ProjectsPage user={user} config={config} onLogout={() => setUser(null)} />;
