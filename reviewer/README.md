@@ -28,18 +28,58 @@ there is no comment database: they live in git like everything else.
 1. In the editor, **Review → Start review** (optionally with a target venue and a focus). Lightleaf issues a git token
    that works only for this project and expires after an hour, and hands the job to the reviewer.
 2. The reviewer clones the project, reads the main file and every `\input`/`\include`, and splits it into sections.
-3. The model is Claude (Anthropic API) or any model behind an OpenAI-compatible API, including self-hosted
-   ones, using structured JSON output in both cases. One call classifies the paper and its sections. Then up to 11 specialised reviewers run in parallel: abstract,
-   introduction, related work, methods, results, conclusion, appendix, writing, LaTeX usage, figures and tables,
-   and venue fit when a venue is given. Each returns comments anchored to an exact quote from the source.
-   Comments whose quote cannot be found are dropped. Similar comments on the same passage are merged, and the most
-   severe are kept (default limit: 40).
+3. A **review pack** does the reviewing (see [Review packs](#review-packs)). With the default `papermentor` pack,
+   one call classifies the paper type and every section. Then specialised reviewers run in parallel:
+   - one per section category: abstract, introduction, related work, methods, results, conclusion, appendix;
+   - one hybrid reviewer for each section that mixes two categories;
+   - whole-paper reviewers for writing style, LaTeX and formatting, and figures and captions;
+   - a paper-type reviewer and a venue reviewer, when a guide exists for them;
+   - two rule-based checks: a code/data footnote at the end of the abstract, and an experimental-setup section
+     placed before the results.
+
+   Each reviewer returns comments anchored to a quote from the source (exact, or a close fuzzy match).
+   Duplicates on the same passage are merged, and the most severe comments are kept (default limit: 40; in
+   **strict mode** only issues a reviewer would raise, at most 30). The model is Claude (Anthropic API) or any
+   model behind an OpenAI-compatible API, with structured JSON output in both cases.
 4. Each comment is inserted at the end of the line it refers to, moved out of anything it could break (math,
    tables, figures, verbatim, `\cite{…}` arguments, inline math, `%` comments). The reviewer adds
    `lightleaf-comments.sty` and one `\usepackage` line, commits as *Lightleaf Reviewer*, and pushes. If someone
    edited the project in the meantime, it re-applies the comments on top of the new version.
 
 Everyone with the project open sees the comments arrive live, and the PDF recompiles.
+
+## Reference check
+
+**Review → Check references** verifies every reference the paper cites against
+[Semantic Scholar](https://www.semanticscholar.org/), using the DOI when there is one and the title otherwise.
+It flags:
+- references that look **fabricated** (no paper with a similar title);
+- DOIs that are unknown or point to a **different paper**;
+- entries whose **authors, year, venue or DOI disagree** with the record;
+- keys that are **cited but not defined** in any `.bib` file;
+- keys **defined twice**.
+
+Each problem becomes a comment right after the first `\cite` of that key, so it shows in the PDF next to the
+citation. The dialog lists all of them. Web pages and software entries without a DOI are not looked up.
+"Not confirmed" (common for workshop papers and old work) is a warning, not an accusation.
+
+The check needs no model credentials. A Semantic Scholar API key (`LIGHTLEAF_S2_API_KEY`, free on request) makes it
+about three times faster. Without one, it uses the shared public rate limit.
+
+## Review packs
+
+A pack is a complete review methodology: prompts, writing guides, how sections are assigned, and which reviewers
+run. Select it with `LIGHTLEAF_REVIEW_PACK`.
+
+| Pack | What it is | License of its prompts |
+|---|---|---|
+| `papermentor` (default) | Port of the [PaperMentor / AI Tutor](https://github.com/jiarui-liu/overleaf) pipeline, with its prompts and 44 writing guides (venues, paper types, sections, figures, style) | Third-party AGPL-3.0, see `packs/papermentor/NOTICE.md` |
+| `lightleaf` | A compact set of 11 reviewers with Lightleaf's own prompts | Lightleaf's own (AGPL-3.0-only) |
+
+Use the `lightleaf` pack for any build distributed under other terms than the AGPL: the `papermentor` prompts are
+not Lightleaf's to relicense. Pack files can be customised without rebuilding: put files with the same relative
+path (e.g. `prompts/subagent.methods.preamble.md`, `skills/02_venues/neurips_2025.md`, or `methods.md` for the
+`lightleaf` pack) in a directory and set `LIGHTLEAF_REVIEW_PROMPTS_DIR`.
 
 ## Isolation: why it can't break Lightleaf
 
@@ -125,14 +165,25 @@ Reviewer side:
 | `LIGHTLEAF_REVIEW_AGENT_CONCURRENCY` | `6` | Parallel model calls per review |
 | `LIGHTLEAF_REVIEW_AGENT_TIMEOUT` | `600` | Seconds before one reviewer is abandoned |
 | `LIGHTLEAF_REVIEW_MAX_INPUT_CHARS` | `800000` | Longer documents are refused, never silently truncated |
-| `LIGHTLEAF_REVIEW_DISABLED_AGENTS` | – | Comma list, e.g. `latex_formatting,venue` |
-| `LIGHTLEAF_REVIEW_PROMPTS_DIR` | – | Directory of `<name>.md` files that replace the built-in prompts in `reviewer/prompts/` |
+| `LIGHTLEAF_REVIEW_PACK` | `papermentor` | Review methodology: `papermentor` or `lightleaf` |
+| `LIGHTLEAF_REVIEW_STRICT` | `false` | Strict mode when the request does not say (the dialog has a checkbox) |
+| `LIGHTLEAF_REVIEW_DISABLED_AGENTS` | – | Comma list of reviewer ids, e.g. `latex_formatting,venue,abstract_footnote,section_structure` |
+| `LIGHTLEAF_REVIEW_SKIP_ANONYMITY` | `false` | papermentor: no comments about anonymous-submission compliance |
+| `LIGHTLEAF_REVIEW_SKIP_SOURCE_COMMENTS` | `false` | papermentor: no comments about `%` comments left in the source |
+| `LIGHTLEAF_REVIEW_CONTENT_FOCUS` | `false` | papermentor: when pruning in strict mode, prefer content over form |
+| `LIGHTLEAF_REVIEW_PROMPTS_DIR` | – | Directory with pack files that replace the built-in ones (same relative paths) |
+| `LIGHTLEAF_S2_API_KEY` | – | Semantic Scholar key for the reference check (optional; `SEMANTIC_SCHOLAR_API_KEY` also works) |
+| `LIGHTLEAF_S2_MIN_INTERVAL_MS` | `1100` with a key, `3500` without | Minimum time between Semantic Scholar requests |
+| `LIGHTLEAF_S2_MAX_RETRIES` / `LIGHTLEAF_S2_TIMEOUT_MS` | `5` / `30000` | Retries on rate limits and outages; per-request timeout |
+| `LIGHTLEAF_REFERENCES_MAX_ENTRIES` | `200` | Most cited references checked per run |
 | `LIGHTLEAF_REVIEW_FALLBACKS` | `true` | Anthropic only: send `fallbacks: "default"` (turn off for gateways that reject it) |
 | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic API endpoint (e.g. a gateway) |
 | `LIGHTLEAF_REVIEW_WORKDIR` | system temp dir | Where checkouts are made |
 
-**Cost.** The paper is sent once per call but cached: the first call writes the cache, and the parallel reviewers
-read it at a fraction of the input price. A typical 10-page paper takes about 12 calls. Each job's token use is
+**Cost.** A review with the `papermentor` pack makes one classification call and one call per reviewer (about
+12 for a typical paper). Section reviewers only receive their sections; whole-paper reviewers receive the full
+source with their writing guides. The `lightleaf` pack sends the paper once as a cached prefix that all its
+reviewers share. Each job's token use is
 shown in the Review dialog. Lower `LIGHTLEAF_REVIEW_EFFORT` or disable agents to reduce cost.
 
 ## Limits
@@ -140,6 +191,8 @@ shown in the Review dialog. Lower `LIGHTLEAF_REVIEW_EFFORT` or disable agents to
 - LaTeX only for now. Typst projects are refused with a clear message.
 - Comments are anchored by exact quotes. If you rewrite a passage while a review is running, its comment is
   skipped (the dialog reports how many could not be placed).
+- Not ported from PaperMentor: the Sentence Placement reviewer (it needs full texts of published papers), the
+  Acknowledgments/Affiliations editors (one lab's house rules), and role-model paper uploads.
 - Quotas on reviews per user are not enforced yet. Use `LIGHTLEAF_REVIEW_MAX_JOBS` and your API key's limits.
 
 ## Development
@@ -148,5 +201,9 @@ shown in the Review dialog. Lower `LIGHTLEAF_REVIEW_EFFORT` or disable agents to
 cargo test -p lightleaf-reviewer        # LaTeX anchoring/insertion, dedup, API request/response handling
 ```
 
-To try the full flow without API costs, point `ANTHROPIC_BASE_URL` at a stub that returns structured outputs.
-Prompts are plain Markdown in `reviewer/prompts/`, and the agent table is in `src/pipeline.rs`.
+To try the full flow without API costs, point `ANTHROPIC_BASE_URL` (or `OPENAI_BASE_URL`) at a stub that returns
+structured outputs, and `LIGHTLEAF_S2_BASE_URL` at a stub of the Semantic Scholar API.
+
+Code map: `src/review/` (orchestrator, `Pack` and `Reviewer` traits), `src/review/packs/<pack>/` (methodologies),
+`packs/<pack>/` (their text files), `src/references/` (reference check), `src/latex/` (parsing, anchoring,
+writing comments), `src/llm/` (providers), `src/jobs/` (job kinds, publish), `src/api.rs` (HTTP).

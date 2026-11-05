@@ -237,6 +237,11 @@ source** as `\AI[Results, warning]{…}`, so they show up in the PDF next to the
 no comment database: comments are git history, can be reverted, removed in one click, or hidden with
 `\usepackage[hide]{lightleaf-comments}`.
 
+It also has a **reference check** that verifies every cited reference against Semantic Scholar and flags
+fabricated, wrong or undefined ones next to the `\cite`. The default review methodology is a port of
+[PaperMentor](https://github.com/jiarui-liu/overleaf) with its writing guides. Claude and OpenAI-compatible models
+are supported.
+
 It's fully isolated: a separate process and container that touches projects only through git, using a short-lived
 token scoped to one project. Leave `LIGHTLEAF_REVIEWER_URL` unset and the feature doesn't exist. If the
 reviewer is down, only the Review dialog notices. Enable it with `docker compose --profile review up -d` (see

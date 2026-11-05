@@ -120,9 +120,17 @@ LIGHTLEAF_REVIEWER_URL=http://127.0.0.1:18090 LIGHTLEAF_REVIEWER_SECRET=<same> .
   footnotes, lists and math, with each package option).
 - `reviewer/tex/lightleaf-comments.sty` is written into user projects. Keep it dependency-light (xcolor only)
   and backwards compatible.
-- Claude calls are raw HTTP (`reviewer/src/claude.rs`): structured outputs, `claude-opus-5-5`,
-  `fallbacks: "default"`. The paper is the cached prefix shared by all agents, so keep the system prompt and
-  document block identical across a job's calls.
+- Model access is `reviewer/src/llm/`: `Llm` owns the HTTP client and retry loop, each provider implements
+  `Provider` (build request, parse answer). Anthropic: raw HTTP, structured outputs, `claude-opus-5-5`,
+  `fallbacks: "default"`. OpenAI-compatible: Chat Completions with a strict `json_schema`.
+- Reviews are **packs** (`src/review/packs/<id>/`, text files in `reviewer/packs/<id>/`). A pack implements
+  `Pack::plan` (classify, build `Reviewer`s) and optionally `finalize`. The orchestrator in `src/review/mod.rs`
+  must stay pack-agnostic. The `papermentor` pack is a faithful port: keep its prompt files byte-identical to
+  upstream and put behaviour in Rust. After adding or removing a file under `reviewer/packs/papermentor/`,
+  regenerate `src/review/packs/papermentor/files.rs` (the `lists_every_file` test fails otherwise), and keep
+  `NOTICE.md` accurate. Third-party paper texts must never be added to a pack.
+- The reference check is `reviewer/src/references/` (job kind `references`, no model needed). Tests use
+  `LIGHTLEAF_S2_BASE_URL` to point at a stub; never hit the real Semantic Scholar API in tests.
 
 ## Conventions
 
