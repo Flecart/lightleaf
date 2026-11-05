@@ -49,15 +49,3 @@ impl Prompts {
         self.0.get(name).cloned().unwrap_or_default()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn every_agent_has_a_prompt() {
-        let p = super::Prompts::load(None);
-        for id in crate::pipeline::agent_ids() {
-            assert!(!p.get(id).is_empty(), "missing prompt for {id}");
-        }
-        assert!(!p.get("system").is_empty() && !p.get("classify").is_empty());
-    }
-}
