@@ -87,7 +87,16 @@ pub async fn user_from_session(state: &AppState, headers: &HeaderMap) -> AppResu
 
 /// Authenticates git clients via HTTP Basic auth: any username + a personal access token
 /// as the password (like Overleaf's git bridge).
-pub async fn user_from_basic(state: &AppState, headers: &HeaderMap) -> AppResult<Option<User>> {
+/// A user authenticated by a git token, and the project the token is restricted to, if any.
+pub struct TokenUser {
+    pub user: User,
+    pub project: Option<String>,
+}
+
+pub async fn user_from_basic(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<Option<TokenUser>> {
     let Some(v) = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -109,10 +118,15 @@ pub async fn user_from_basic(state: &AppState, headers: &HeaderMap) -> AppResult
         .db(move |c| {
             let u = c
                 .query_row(
-                    "SELECT u.id, u.email, u.name, u.is_admin FROM tokens t JOIN users u ON u.id = t.user_id
-                     WHERE t.token_hash = ?1",
-                    params![hash],
-                    row_to_user,
+                    "SELECT u.id, u.email, u.name, u.is_admin, t.project_id FROM tokens t JOIN users u ON u.id = t.user_id
+                     WHERE t.token_hash = ?1 AND (t.expires_at IS NULL OR t.expires_at > ?2)",
+                    params![hash, now()],
+                    |r| {
+                        Ok(TokenUser {
+                            user: row_to_user(r)?,
+                            project: r.get(4)?,
+                        })
+                    },
                 )
                 .optional()?;
             if u.is_some() {
@@ -600,7 +614,7 @@ pub async fn list_tokens(
 ) -> AppResult<Json<serde_json::Value>> {
     let rows = state
         .db(move |c| {
-            let mut st = c.prepare("SELECT id, name, created_at, last_used FROM tokens WHERE user_id = ?1 ORDER BY id")?;
+            let mut st = c.prepare("SELECT id, name, created_at, last_used FROM tokens WHERE user_id = ?1 AND project_id IS NULL ORDER BY id")?;
             st.query_map([user.id], |r| {
                 Ok(json!({ "id": r.get::<_, i64>(0)?, "name": r.get::<_, String>(1)?,
                            "createdAt": r.get::<_, i64>(2)?, "lastUsed": r.get::<_, Option<i64>>(3)? }))
@@ -641,6 +655,34 @@ pub async fn create_token(
         })
         .await?;
     Ok(Json(json!({ "id": id, "token": token })))
+}
+
+/// Issues a git token acting as `user_id` that only works for `project_id` and expires after
+/// `ttl_secs`. Used by integrations such as the reviewer; never listed in account settings.
+pub async fn issue_project_token(
+    state: &AppState,
+    user_id: i64,
+    project_id: &str,
+    name: &str,
+    ttl_secs: i64,
+) -> AppResult<String> {
+    let token = format!("llt_{}", random_token(20));
+    let (hash, pid, name) = (sha256_hex(&token), project_id.to_string(), name.to_string());
+    state
+        .db(move |c| {
+            let t = now();
+            c.execute(
+                "DELETE FROM tokens WHERE expires_at IS NOT NULL AND expires_at < ?1",
+                [t],
+            )?;
+            c.execute(
+                "INSERT INTO tokens (user_id, name, token_hash, created_at, project_id, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![user_id, name, hash, t, pid, t + ttl_secs],
+            )
+        })
+        .await?;
+    Ok(token)
 }
 
 pub async fn delete_token(

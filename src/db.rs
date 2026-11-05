@@ -40,7 +40,11 @@ CREATE TABLE IF NOT EXISTS tokens (
     name       TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL,
-    last_used  INTEGER
+    last_used  INTEGER,
+    -- Set for short-lived tokens issued to integrations (e.g. the reviewer): the token only
+    -- works for this project and stops working at expires_at.
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    expires_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS chat (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,

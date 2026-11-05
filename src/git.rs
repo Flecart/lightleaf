@@ -162,8 +162,9 @@ async fn git_auth(
     min: Role,
 ) -> Result<User, Response> {
     let user = match user_from_basic(state, headers).await {
-        Ok(Some(u)) => u,
-        Ok(None) => return Err(need_auth()),
+        Ok(Some(t)) if t.project.as_deref().is_none_or(|p| p == id) => t.user,
+        // A project-scoped token used for another project: behave as if it did not exist.
+        Ok(Some(_)) | Ok(None) => return Err(need_auth()),
         Err(e) => return Err(e.into_response()),
     };
     match state.role(id, user.id).await {
