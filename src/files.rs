@@ -25,6 +25,32 @@ pub struct Entry {
 }
 
 /// Walks the project tree (excluding `.git`) and returns all entries, sorted.
+/// Total size of a project's files (git history excluded).
+pub async fn project_size(root: &FsPath) -> u64 {
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        walk(&root)
+            .iter()
+            .filter(|(_, _, m)| m.is_file())
+            .map(|(_, _, m)| m.len())
+            .sum()
+    })
+    .await
+    .unwrap_or(0)
+}
+
+/// Fails if a project would exceed `LIGHTLEAF_MAX_PROJECT_MB`.
+pub fn check_project_size(state: &SharedState, bytes: u64) -> AppResult<()> {
+    let max = state.cfg.max_project_bytes;
+    if max > 0 && bytes > max {
+        return Err(AppError(
+            axum::http::StatusCode::PAYLOAD_TOO_LARGE,
+            format!("project size limit reached ({} MB)", max / (1024 * 1024)),
+        ));
+    }
+    Ok(())
+}
+
 pub fn walk(root: &FsPath) -> Vec<(String, PathBuf, std::fs::Metadata)> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -261,6 +287,11 @@ pub async fn upload(
     let root = state.cfg.project_dir(&id);
     let mut folder = String::new();
     let mut saved = Vec::new();
+    let mut used = if state.cfg.max_project_bytes > 0 {
+        project_size(&root).await
+    } else {
+        0
+    };
     while let Some(field) = mp
         .next_field()
         .await
@@ -283,6 +314,14 @@ pub async fn upload(
             .bytes()
             .await
             .map_err(|e| AppError::bad(e.to_string()))?;
+        if state.cfg.max_project_bytes > 0 {
+            let replaced = tokio::fs::metadata(&full)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
+            used = used.saturating_sub(replaced) + data.len() as u64;
+            check_project_size(&state, used)?;
+        }
         if let Some(parent) = full.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }

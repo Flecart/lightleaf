@@ -123,6 +123,8 @@ All configuration is done with environment variables:
 | `LIGHTLEAF_COMPILE_TIMEOUT` | `90` | Seconds before a compile is killed |
 | `LIGHTLEAF_COMPILE_WRAPPER` | – | Command prefix used to sandbox compilers, e.g. `firejail --quiet --net=none` |
 | `LIGHTLEAF_MAX_UPLOAD_MB` | `50` | Max upload size |
+| `LIGHTLEAF_MAX_PROJECTS` | `0` (unlimited) | Projects one user may own |
+| `LIGHTLEAF_MAX_PROJECT_MB` | `0` (unlimited) | Maximum size of a project's files (excluding git history), enforced on uploads and zip imports |
 | `LIGHTLEAF_SECURE_COOKIES` | `false` | Set to `true` when served over HTTPS (also enables HSTS) |
 | `LIGHTLEAF_TRUST_PROXY` | `false` | Use the client IP from `X-Forwarded-For` (set to `true` **only** behind your own reverse proxy) |
 | `LIGHTLEAF_SESSION_DAYS` | `30` | Maximum session lifetime |

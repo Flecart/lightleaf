@@ -98,6 +98,27 @@ async fn insert_project(
     compiler: &str,
     main: &str,
 ) -> AppResult<String> {
+    let max = state.cfg.max_projects_per_user;
+    if max > 0 {
+        let uid = user.id;
+        let owned: i64 = state
+            .db(move |c| {
+                c.query_row(
+                    "SELECT COUNT(*) FROM projects WHERE owner_id = ?1",
+                    [uid],
+                    |r| r.get(0),
+                )
+            })
+            .await?;
+        if owned as usize >= max {
+            return Err(AppError(
+                axum::http::StatusCode::FORBIDDEN,
+                format!(
+                    "you have reached the limit of {max} projects — delete one to create another"
+                ),
+            ));
+        }
+    }
     let id = uuid::Uuid::new_v4().simple().to_string();
     let (pid, name, compiler, main, uid) = (
         id.clone(),
@@ -216,8 +237,19 @@ pub async fn import_zip(
             return Err(AppError::bad(format!("could not import zip: {e}")));
         }
     };
+    if let Err(e) = crate::files::check_project_size(&state, crate::files::project_size(&tmp).await)
+    {
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+        return Err(e);
+    }
     let compiler = choose_compiler(&det.wanted, &crate::compile::available_compilers());
-    let id = insert_project(&state, &user, &name, &compiler, &det.main_file).await?;
+    let id = match insert_project(&state, &user, &name, &compiler, &det.main_file).await {
+        Ok(id) => id,
+        Err(e) => {
+            let _ = tokio::fs::remove_dir_all(&tmp).await;
+            return Err(e);
+        }
+    };
     let dir = state.cfg.project_dir(&id);
     tokio::fs::rename(&tmp, &dir).await?;
     init_repo(&dir).await?;

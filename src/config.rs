@@ -24,6 +24,10 @@ pub struct Config {
     /// Optional command prefix used to sandbox compilers, e.g. `bwrap --unshare-net ...`.
     pub compile_wrapper: Vec<String>,
     pub max_upload_bytes: usize,
+    /// Projects one user may own (0 = unlimited).
+    pub max_projects_per_user: usize,
+    /// Maximum size of a project's files, excluding git history (0 = unlimited).
+    pub max_project_bytes: u64,
     /// Size of the SQLite connection pool.
     pub db_connections: usize,
     pub secure_cookies: bool,
@@ -84,6 +88,14 @@ impl Config {
             max_upload_bytes: env("LIGHTLEAF_MAX_UPLOAD_MB")
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(50)
+                * 1024
+                * 1024,
+            max_projects_per_user: env("LIGHTLEAF_MAX_PROJECTS")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            max_project_bytes: env("LIGHTLEAF_MAX_PROJECT_MB")
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
                 * 1024
                 * 1024,
             db_connections: env("LIGHTLEAF_DB_CONNECTIONS")
