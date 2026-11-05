@@ -179,6 +179,12 @@ fn dummy_hash() -> String {
     .clone()
 }
 
+/// A bcrypt hash (`$2a$`, `$2b$`, `$2y$`), as imported from Overleaf. These are accepted at
+/// login and replaced by an Argon2 hash on the first successful one.
+fn is_legacy_hash(hash: &str) -> bool {
+    ["$2a$", "$2b$", "$2y$"].iter().any(|p| hash.starts_with(p))
+}
+
 async fn verify_password(state: &AppState, pw: String, hash: Option<String>) -> bool {
     let Ok(_slot) = state.hash_slots.acquire().await else {
         return false;
@@ -186,9 +192,13 @@ async fn verify_password(state: &AppState, pw: String, hash: Option<String>) -> 
     tokio::task::spawn_blocking(move || {
         let real = hash.is_some();
         let hash = hash.unwrap_or_else(dummy_hash);
-        let ok = PasswordHash::new(&hash)
-            .map(|h| Argon2::default().verify_password(pw.as_bytes(), &h).is_ok())
-            .unwrap_or(false);
+        let ok = if is_legacy_hash(&hash) {
+            bcrypt::verify(pw.as_bytes(), &hash).unwrap_or(false)
+        } else {
+            PasswordHash::new(&hash)
+                .map(|h| Argon2::default().verify_password(pw.as_bytes(), &h).is_ok())
+                .unwrap_or(false)
+        };
         real && ok
     })
     .await
@@ -484,9 +494,29 @@ pub async fn login(
         Some((id, h)) => (Some(id), Some(h)),
         None => (None, None),
     };
-    if verify_password(&state, req.password, hash).await
+    let legacy = hash.as_deref().is_some_and(is_legacy_hash);
+    if verify_password(&state, req.password.clone(), hash).await
         && let Some(id) = id
     {
+        if legacy {
+            // Upgrade an imported bcrypt hash to Argon2 now that we know the password.
+            match hash_password(&state, req.password).await {
+                Ok(new_hash) => {
+                    let _ = state
+                        .db(move |c| {
+                            c.execute(
+                                "UPDATE users SET password_hash = ?2 WHERE id = ?1",
+                                params![id, new_hash],
+                            )
+                        })
+                        .await;
+                    tracing::info!("upgraded the legacy password hash of user {id}");
+                }
+                Err(e) => {
+                    tracing::warn!("could not upgrade the password hash of user {id}: {}", e.1)
+                }
+            }
+        }
         state.limits.failed_per_account.clear(&email);
         crate::metrics::Metrics::inc(&state.metrics.logins_ok);
         return start_session(&state, id, ip, user_agent(&headers)).await;
@@ -856,6 +886,14 @@ mod tests {
         assert!(validate_new_account("a@b.c", " ", "longenough").is_err());
         assert!(validate_new_account("a@b.c", "A", "short").is_err());
         assert!(validate_password(&"x".repeat(2000)).is_err());
+    }
+
+    #[test]
+    fn recognises_imported_bcrypt_hashes() {
+        let h = bcrypt::hash("correct horse", 4).unwrap();
+        assert!(is_legacy_hash(&h));
+        assert!(bcrypt::verify("correct horse", &h).unwrap());
+        assert!(!is_legacy_hash("$argon2id$v=19$m=19456,t=2,p=1$abc$def"));
     }
 
     #[test]
