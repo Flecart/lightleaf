@@ -362,7 +362,8 @@ async fn compile_pdflatex(
 }
 
 /// Compiles with folio (<https://github.com/flecart/folio>), a LaTeX compiler written in Rust.
-/// Folio handles bibliographies in process and has no SyncTeX output. Documents that use
+/// Folio handles bibliographies in process and writes SyncTeX with `--synctex` (its slimtex
+/// fallback does not, so [`compile`] checks for the file). Documents that use
 /// constructs folio does not support are handed to slimtex by folio itself
 /// (`--fallback=auto`), which leaves an ordinary TeX log next to the PDF.
 async fn compile_folio(
@@ -377,7 +378,15 @@ async fn compile_folio(
     for ext in ["log", "synctex.gz"] {
         let _ = tokio::fs::remove_file(dir.join(format!("{s}.{ext}"))).await;
     }
-    let argv = ["folio", "--color=never", "-o", &format!("{s}.pdf"), main].map(String::from);
+    let argv = [
+        "folio",
+        "--color=never",
+        "--synctex",
+        "-o",
+        &format!("{s}.pdf"),
+        main,
+    ]
+    .map(String::from);
     let r = run(state, dir, &argv, deadline).await?;
     let mut issues = parse_folio(&r.output);
     let mut log = r.output;
@@ -745,7 +754,13 @@ pub async fn compile(
         "pdf": if ok { Some(format!("/api/projects/{id}/output/output.pdf?t={}", crate::util::now_ms())) } else { None },
         "issues": issues,
         "log": full_log,
-        "synctex": !matches!(compiler.as_str(), "typst" | "folio") && tools().synctex,
+        "synctex": tools().synctex
+            && match compiler.as_str() {
+                "typst" => false,
+                // the slimtex fallback writes none
+                "folio" => build.join(format!("{s}.synctex.gz")).exists(),
+                _ => true,
+            },
         "mainFile": main,
     });
     state.remember_compile(key, started, result.clone());
