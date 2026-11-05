@@ -209,12 +209,15 @@ automatically — if a pull conflicts it is aborted and nothing changes.
 ```
 src/
   main.rs       router & startup           collab.rs   real-time CRDT rooms
+  reviewer.rs   optional proxy to the AI review service (reviewer/)
   auth.rs       users, sessions, tokens    compile.rs  LaTeX/Typst, log parsing, SyncTeX
   projects.rs   projects, sharing, chat    git.rs      smart HTTP, history, remotes
   files.rs      file tree, upload, zip     assets.rs   embedded frontend
   overleaf.rs   Overleaf zip import/export, main-file & engine detection
+reviewer/       lightleaf-reviewer: separate AI review service (own crate, image and README)
 frontend/src/
   editor/       EditorPage, CodeEditor, PdfViewer, FileTree, Panels, socket (Yjs client), lang
+  review/       AI review dialog (lazy-loaded, isolated by an error boundary)
   pages/        dashboard, auth, settings, admin
 ```
 
@@ -225,6 +228,19 @@ cargo run                                  # backend on :8080 (serves the last f
 cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api and /git to :8080
 cargo test
 ```
+
+## AI review (optional)
+
+A separate service, [`lightleaf-reviewer`](reviewer/README.md), can review your paper with a team of AI reviewers
+(abstract, method, results, writing, LaTeX, figures, venue fit, …). It writes their comments **into the LaTeX
+source** as `\ANG[AI: Results, warning]{…}`, so they show up in the PDF next to the text they're about. There's
+no comment database: comments are git history, can be reverted, removed in one click, or hidden with
+`\usepackage[hide]{lightleaf-comments}`. Write your own the same way: `\ANG{…}`.
+
+It's fully isolated: a separate process and container that touches projects only through git, using a short-lived
+token scoped to one project. Leave `LIGHTLEAF_REVIEWER_URL` unset and the feature doesn't exist. If the
+reviewer is down, only the Review dialog notices. Enable it with `docker compose --profile review up -d` (see
+[reviewer/README.md](reviewer/README.md) for every deployment option and setting).
 
 ## Scaling
 

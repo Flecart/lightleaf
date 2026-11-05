@@ -91,9 +91,38 @@ src/files.rs     file tree, upload (quota), sandboxed file serving
 src/projects.rs  projects, members, chat, zip import (quota), copy
 src/git.rs       smart-HTTP git, history, external remotes
 src/metrics.rs   Prometheus /metrics
+src/reviewer.rs  optional proxy to the AI reviewer (only coupling point)
 src/assets.rs    embedded, pre-compressed frontend + CSP
 tools/loadtest/  1000-user WebSocket + HTTP load test (see its README)
 ```
+
+## AI reviewer (`reviewer/`)
+
+A separate workspace crate and binary, `lightleaf-reviewer`. Keep it **decoupled**: core may only talk to it through
+`src/reviewer.rs` (HTTP with timeouts; feature off when `LIGHTLEAF_REVIEWER_URL` is unset), and the reviewer may
+only touch projects through git with the project-scoped token core issues. Never import reviewer code into core
+or give the reviewer DB access. Frontend code for it stays in `frontend/src/review/` behind the lazy
+`ReviewEntry` + error boundary.
+
+```bash
+cargo build -p lightleaf-reviewer && cargo test -p lightleaf-reviewer
+# Local end-to-end run with no API cost: start a stub Messages API that returns structured outputs, then
+LIGHTLEAF_REVIEWER_SECRET=<16+ chars> ANTHROPIC_API_KEY=fake ANTHROPIC_BASE_URL=http://127.0.0.1:<stub> \
+  LIGHTLEAF_REVIEWER_BIND=127.0.0.1:18090 ./target/debug/lightleaf-reviewer &
+LIGHTLEAF_REVIEWER_URL=http://127.0.0.1:18090 LIGHTLEAF_REVIEWER_SECRET=<same> ./target/debug/lightleaf &
+# then: POST /api/projects/<id>/review, poll GET /api/projects/<id>/review, check `git log` in the project dir
+```
+
+- Comments are `\ANG[AI: <Agent>, <severity>]{text}` (macro name: `LIGHTLEAF_REVIEW_MACRO`). Human comments are
+  `\ANG{…}` / `\ANG[Name]{…}`. "Clear" removes only labels starting with `AI`.
+- Insertion rules (`reviewer/src/latex.rs::insertion_point`) are the riskiest code: any change needs a unit test,
+  and a compile check of the result (`pdflatex` on a document that uses the macro in titles, captions,
+  footnotes, lists and math, with each package option).
+- `reviewer/tex/lightleaf-comments.sty` is written into user projects. Keep it dependency-light (xcolor only)
+  and backwards compatible.
+- Claude calls are raw HTTP (`reviewer/src/claude.rs`): structured outputs, `claude-opus-5-5`,
+  `fallbacks: "default"`. The paper is the cached prefix shared by all agents, so keep the system prompt and
+  document block identical across a job's calls.
 
 ## Conventions
 
