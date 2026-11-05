@@ -69,7 +69,7 @@ impl AppState {
         AppState {
             compile_slots: Semaphore::new(cfg.max_concurrent_compiles),
             hash_slots: Semaphore::new(4),
-            limits: crate::security::Limits::default(),
+            limits: crate::security::Limits::new(&cfg),
             recent_compiles: Mutex::new(HashMap::new()),
             cfg,
             db: Arc::new(conns.into_iter().map(Mutex::new).collect()),

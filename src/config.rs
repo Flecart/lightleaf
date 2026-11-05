@@ -17,6 +17,10 @@ pub struct Config {
     pub signup: Signup,
     pub compile_timeout_secs: u64,
     pub max_concurrent_compiles: usize,
+    /// Compiles one user may have running or queued at once.
+    pub compiles_per_user: usize,
+    /// Compiles one user may run per minute (coalesced requests do not count).
+    pub compiles_per_minute: u32,
     /// Optional command prefix used to sandbox compilers, e.g. `bwrap --unshare-net ...`.
     pub compile_wrapper: Vec<String>,
     pub max_upload_bytes: usize,
@@ -66,6 +70,14 @@ impl Config {
                         .map(|n| n.get().clamp(1, 4))
                         .unwrap_or(2)
                 }),
+            compiles_per_user: env("LIGHTLEAF_COMPILES_PER_USER")
+                .and_then(|v| v.parse().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(2),
+            compiles_per_minute: env("LIGHTLEAF_COMPILES_PER_MINUTE")
+                .and_then(|v| v.parse().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(30),
             compile_wrapper: env("LIGHTLEAF_COMPILE_WRAPPER")
                 .map(|v| v.split_whitespace().map(String::from).collect())
                 .unwrap_or_default(),

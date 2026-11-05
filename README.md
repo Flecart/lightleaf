@@ -118,6 +118,8 @@ All configuration is done with environment variables:
 | `LIGHTLEAF_SIGNUP` | `closed` | `closed` = no self-registration (admins create accounts) · `local` = self-registration only from the server machine itself · `open` = anyone can register |
 | `LIGHTLEAF_ADMIN_EMAIL` / `LIGHTLEAF_ADMIN_PASSWORD` | – | Create an admin account on start-up if it doesn't exist |
 | `LIGHTLEAF_MAX_COMPILES` | `min(cpus, 4)` | Maximum concurrent compiles (the rest are queued) |
+| `LIGHTLEAF_COMPILES_PER_USER` | `2` | Compiles one user may have running or queued at once |
+| `LIGHTLEAF_COMPILES_PER_MINUTE` | `30` | Compiles one user may run per minute (requests served from a coalesced compile do not count) |
 | `LIGHTLEAF_COMPILE_TIMEOUT` | `90` | Seconds before a compile is killed |
 | `LIGHTLEAF_COMPILE_WRAPPER` | – | Command prefix used to sandbox compilers, e.g. `firejail --quiet --net=none` |
 | `LIGHTLEAF_MAX_UPLOAD_MB` | `50` | Max upload size |

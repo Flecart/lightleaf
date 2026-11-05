@@ -185,13 +185,56 @@ pub struct Limits {
     pub auth_per_ip: RateLimiter,
     /// Failed logins per account.
     pub failed_per_account: RateLimiter,
+    /// Compiles actually run (not coalesced) per user and minute.
+    pub compiles_per_user: RateLimiter,
+    /// Compiles running or queued per user, capped at `max_user_compiles`.
+    user_compiles: Mutex<HashMap<i64, usize>>,
+    max_user_compiles: usize,
 }
 
-impl Default for Limits {
-    fn default() -> Self {
+impl Limits {
+    pub fn new(cfg: &crate::config::Config) -> Self {
         Limits {
             auth_per_ip: RateLimiter::new(30, Duration::from_secs(10 * 60)),
             failed_per_account: RateLimiter::new(10, Duration::from_secs(15 * 60)),
+            compiles_per_user: RateLimiter::new(cfg.compiles_per_minute, Duration::from_secs(60)),
+            user_compiles: Mutex::new(HashMap::new()),
+            max_user_compiles: cfg.compiles_per_user,
+        }
+    }
+
+    /// Reserves one of the user's concurrent compile slots, released when the guard drops.
+    pub fn user_compile_slot(&self, user_id: i64) -> Option<UserCompileGuard<'_>> {
+        let mut m = self.user_compiles.lock().unwrap_or_else(|p| p.into_inner());
+        let n = m.entry(user_id).or_insert(0);
+        if *n >= self.max_user_compiles {
+            return None;
+        }
+        *n += 1;
+        Some(UserCompileGuard {
+            limits: self,
+            user_id,
+        })
+    }
+}
+
+pub struct UserCompileGuard<'a> {
+    limits: &'a Limits,
+    user_id: i64,
+}
+
+impl Drop for UserCompileGuard<'_> {
+    fn drop(&mut self) {
+        let mut m = self
+            .limits
+            .user_compiles
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(n) = m.get_mut(&self.user_id) {
+            *n -= 1;
+            if *n == 0 {
+                m.remove(&self.user_id);
+            }
         }
     }
 }
@@ -269,6 +312,19 @@ mod tests {
         assert!(l.blocked("b").is_none());
         l.clear("a");
         assert!(l.blocked("a").is_none());
+    }
+
+    #[test]
+    fn user_compile_slots() {
+        let mut cfg = crate::config::Config::from_env();
+        cfg.compiles_per_user = 1;
+        let l = Limits::new(&cfg);
+        let g = l.user_compile_slot(7);
+        assert!(g.is_some());
+        assert!(l.user_compile_slot(7).is_none());
+        assert!(l.user_compile_slot(8).is_some());
+        drop(g);
+        assert!(l.user_compile_slot(7).is_some());
     }
 
     #[test]

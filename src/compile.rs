@@ -466,6 +466,14 @@ pub async fn compile(
         )));
     }
 
+    // Fairness: one user cannot fill the global compile queue.
+    let _user_slot = state.limits.user_compile_slot(user.id).ok_or_else(|| {
+        AppError(
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            "you already have compiles running — wait for them to finish".into(),
+        )
+    })?;
+
     // One compile per project at a time; queued globally by the semaphore.
     let arrived = Instant::now();
     let build_lock = state.project_lock(&format!("build:{id}"));
@@ -477,6 +485,13 @@ pub async fn compile(
     if let Some(result) = state.recent_compile(&key, arrived) {
         return Ok(Json(result));
     }
+    if let Some(wait) = state.limits.compiles_per_user.blocked(&user.id.to_string()) {
+        return Err(AppError(
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            format!("compile limit reached — try again in {wait} s"),
+        ));
+    }
+    state.limits.compiles_per_user.hit(&user.id.to_string());
     let started = Instant::now();
     {
         let lock = state.project_lock(&id);
