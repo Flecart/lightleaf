@@ -24,7 +24,7 @@ impl OpenAi {
             "model": self.model,
             "messages": [
                 { "role": "system", "content": r.system },
-                { "role": "user", "content": format!("{}\n\n{}", r.document, r.task) },
+                { "role": "user", "content": if r.document.is_empty() { r.task.to_string() } else { format!("{}\n\n{}", r.document, r.task) } },
             ],
             "response_format": {
                 "type": "json_schema",

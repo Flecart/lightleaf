@@ -1,0 +1,2 @@
+--- {{skillPath}} ---
+{{skillContent}}

@@ -1,0 +1,2 @@
+The paper is being prepared for submission to: {{venue}}.
+Review the paper specifically against this venue's requirements: page limits, required sections (e.g. limitations, reproducibility, impact statement), formatting rules, and the evaluation criteria that reviewers at this venue apply. Flag any issues that would hurt the paper's acceptance at this specific venue. Focus on venue-specific gaps — do not repeat general writing advice covered by other reviewers.

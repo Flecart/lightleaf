@@ -1,0 +1,1 @@
+Review methods for clarity, design justification, intuition-before-formalism, notation consistency, and pseudo-code readability. You also review the Experimental Setup section (if present): it must give the datasets, models, baselines, metrics, hyperparameters and implementation details needed to reproduce the experiments, and it must not report results.

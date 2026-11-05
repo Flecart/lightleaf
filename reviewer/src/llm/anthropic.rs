@@ -22,17 +22,17 @@ pub struct Anthropic {
 
 impl Anthropic {
     fn body(&self, r: &Request) -> Value {
+        // The shared document (if any) is its own cached block, before the task.
+        let mut content = Vec::new();
+        if !r.document.is_empty() {
+            content.push(json!({ "type": "text", "text": r.document, "cache_control": { "type": "ephemeral" } }));
+        }
+        content.push(json!({ "type": "text", "text": r.task }));
         let mut body = json!({
             "model": self.model,
             "max_tokens": r.max_tokens,
             "system": [{ "type": "text", "text": r.system }],
-            "messages": [{
-                "role": "user",
-                "content": [
-                    { "type": "text", "text": r.document, "cache_control": { "type": "ephemeral" } },
-                    { "type": "text", "text": r.task },
-                ],
-            }],
+            "messages": [{ "role": "user", "content": content }],
             "output_config": {
                 "effort": self.effort,
                 "format": { "type": "json_schema", "schema": r.schema },

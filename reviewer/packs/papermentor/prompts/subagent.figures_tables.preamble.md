@@ -1,0 +1,1 @@
+Review figure and table captions for self-containedness, first-sentence-as-statement, abbreviation definitions, and whether the surrounding text properly explains each figure/table.

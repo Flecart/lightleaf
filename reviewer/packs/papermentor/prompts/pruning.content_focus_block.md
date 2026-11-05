@@ -1,0 +1,2 @@
+- STRONGLY prefer removing comments about: LaTeX formatting issues, anonymous submission violations, author-identifying information in source code or comments, compilation warnings, package usage, or other mechanical/formalism issues that do not affect the paper's scientific content or writing quality.
+- Focus the kept comments on substantive feedback: clarity of arguments, strength of evidence, missing content, logical gaps, and writing quality that affects comprehension.

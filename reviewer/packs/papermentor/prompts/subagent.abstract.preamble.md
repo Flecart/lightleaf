@@ -1,0 +1,1 @@
+Review the abstract for structure (5-sentence pattern), specificity (exact numbers, not vague), matryoshka doll principle, and clarity.

@@ -18,6 +18,52 @@ pub struct Document {
 }
 
 impl Document {
+    /// The main file with every `\\input`/`\\include`/`\\subfile` replaced in place by the
+    /// file's content between marker comments (missing or repeated files leave a marker), so
+    /// the text reads in document order.
+    pub fn inlined(&self) -> String {
+        let Some(main) = self.files.first() else {
+            return String::new();
+        };
+        let mut seen = HashSet::from([main.path.clone()]);
+        self.inline_into(&main.text, &mut seen, 0)
+    }
+
+    fn inline_into(&self, text: &str, seen: &mut HashSet<String>, depth: usize) -> String {
+        let mut out = String::with_capacity(text.len());
+        for line in text.split_inclusive('\n') {
+            let code = code_part(line);
+            let mut rest_at = 0;
+            let mut replaced = String::new();
+            let mut cursor = 0;
+            while let Some((start, end, path)) =
+                next_include(&code[rest_at..]).map(|(s, e, p)| (rest_at + s, rest_at + e, p))
+            {
+                replaced.push_str(&line[cursor..start]);
+                let body = match self.files.iter().find(|f| f.path == path) {
+                    Some(_) if !seen.insert(path.clone()) || depth > 20 => {
+                        format!("% [AI Tutor] Could not inline: {path} (already included)")
+                    }
+                    Some(f) => format!(
+                        "% ========== INLINED FROM: {path} ==========\n{}\n% ========== END OF: {path} ==========",
+                        self.inline_into(&f.text, seen, depth + 1)
+                    ),
+                    None => format!("% [AI Tutor] Could not inline: {path} (not found)"),
+                };
+                replaced.push_str(&body);
+                cursor = end;
+                rest_at = end;
+            }
+            if cursor == 0 {
+                out.push_str(line);
+            } else {
+                replaced.push_str(&line[cursor..]);
+                out.push_str(&replaced);
+            }
+        }
+        out
+    }
+
     /// All files concatenated with markers, as shown to the model.
     pub fn merged(&self) -> String {
         let mut out = String::new();
@@ -56,6 +102,19 @@ fn resolve_input(arg: &str) -> Option<String> {
         s.push_str(".tex");
     }
     s.ends_with(".tex").then_some(s)
+}
+
+/// The first `\\input{…}`/`\\include{…}`/`\\subfile{…}` in `code`: (start, end, resolved path).
+fn next_include(code: &str) -> Option<(usize, usize, String)> {
+    ["\\input{", "\\include{", "\\subfile{"]
+        .iter()
+        .filter_map(|cmd| {
+            let i = code.find(cmd)?;
+            let close = code[i + cmd.len()..].find('}')? + i + cmd.len();
+            let path = resolve_input(&code[i + cmd.len()..close])?;
+            Some((i, close + 1, path))
+        })
+        .min_by_key(|(i, _, _)| *i)
 }
 
 /// Arguments of `\input{…}`, `\include{…}` and `\subfile{…}` outside comments.
@@ -108,6 +167,25 @@ pub fn gather(root: &Path, main: &str) -> anyhow::Result<Document> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inlines_includes_in_document_order() {
+        let doc = Document {
+            files: vec![
+                SourceFile {
+                    path: "main.tex".into(),
+                    text: "A\n\\input{b}\nC % \\input{x}\n\\input{missing}\n".into(),
+                },
+                SourceFile {
+                    path: "b.tex".into(),
+                    text: "B1\nB2".into(),
+                },
+            ],
+        };
+        let t = doc.inlined();
+        assert!(t.starts_with("A\n% ========== INLINED FROM: b.tex ==========\nB1\nB2\n% ========== END OF: b.tex ==========\nC"));
+        assert!(t.contains("% [AI Tutor] Could not inline: missing.tex (not found)"));
+    }
 
     #[test]
     fn resolves_includes_safely() {

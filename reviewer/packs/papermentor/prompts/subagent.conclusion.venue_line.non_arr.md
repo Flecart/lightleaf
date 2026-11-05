@@ -1,0 +1,1 @@
+Target venue: {{venue}}. In Limitations scope comments, say the content dodges the page limit and belongs in the main paper or appendix. Do not mention desk rejection.

@@ -29,7 +29,15 @@ pub struct Config {
     pub agent_timeout_secs: u64,
     pub max_input_chars: usize,
     pub disabled_agents: Vec<String>,
+    /// Pack file overrides: files at the same relative path replace the built-in ones.
     pub prompts_dir: Option<PathBuf>,
+    /// Review methodology (`papermentor` or `lightleaf`).
+    pub pack: String,
+    /// Default for strict mode when a request does not say.
+    pub strict_default: bool,
+    pub skip_anonymity: bool,
+    pub skip_source_comments: bool,
+    pub content_focus: bool,
     pub work_dir: PathBuf,
 }
 
@@ -38,6 +46,13 @@ fn env(key: &str) -> Option<String> {
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
+}
+
+fn flag(key: &str) -> bool {
+    matches!(
+        env(key).map(|v| v.to_ascii_lowercase()).as_deref(),
+        Some("1" | "true" | "yes" | "on")
+    )
 }
 
 fn num<T: std::str::FromStr + PartialOrd + Default>(key: &str, default: T) -> T {
@@ -56,6 +71,13 @@ impl Config {
         anyhow::ensure!(
             !macro_name.is_empty() && macro_name.chars().all(|c| c.is_ascii_alphabetic()),
             "LIGHTLEAF_REVIEW_MACRO must contain only letters (it becomes a LaTeX command name)"
+        );
+        let pack =
+            env("LIGHTLEAF_REVIEW_PACK").unwrap_or_else(|| crate::review::packs::DEFAULT.into());
+        anyhow::ensure!(
+            crate::review::packs::ids().contains(&pack.as_str()),
+            "LIGHTLEAF_REVIEW_PACK must be one of {:?}",
+            crate::review::packs::ids()
         );
         let anthropic_api_key = env("ANTHROPIC_API_KEY");
         let openai_api_key = env("OPENAI_API_KEY");
@@ -112,6 +134,11 @@ impl Config {
                 })
                 .unwrap_or_default(),
             prompts_dir: env("LIGHTLEAF_REVIEW_PROMPTS_DIR").map(PathBuf::from),
+            pack,
+            strict_default: flag("LIGHTLEAF_REVIEW_STRICT"),
+            skip_anonymity: flag("LIGHTLEAF_REVIEW_SKIP_ANONYMITY"),
+            skip_source_comments: flag("LIGHTLEAF_REVIEW_SKIP_SOURCE_COMMENTS"),
+            content_focus: flag("LIGHTLEAF_REVIEW_CONTENT_FOCUS"),
             work_dir: env("LIGHTLEAF_REVIEW_WORKDIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| std::env::temp_dir().join("lightleaf-reviewer")),

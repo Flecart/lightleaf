@@ -46,6 +46,91 @@ pub fn find_quote(text: &str, quote: &str) -> Option<(usize, usize)> {
     Some((map[i].0, map[j - 1].1))
 }
 
+/// Bigram multiset of a char slice.
+fn bigrams(chars: &[char]) -> std::collections::HashMap<(char, char), u32> {
+    let mut m = std::collections::HashMap::new();
+    for w in chars.windows(2) {
+        *m.entry((w[0], w[1])).or_insert(0) += 1;
+    }
+    m
+}
+
+fn dice(a: &std::collections::HashMap<(char, char), u32>, b: &[char]) -> f64 {
+    let gb = bigrams(b);
+    let (na, nb): (u32, u32) = (a.values().sum(), gb.values().sum());
+    if na + nb == 0 {
+        return 0.0;
+    }
+    let common: u32 = a
+        .iter()
+        .map(|(k, v)| (*v).min(*gb.get(k).unwrap_or(&0)))
+        .sum();
+    2.0 * common as f64 / (na + nb) as f64
+}
+
+/// Minimum similarity for a fuzzy match (as upstream: `AI_TUTOR_FUZZY_THRESHOLD` = 0.85).
+pub const FUZZY_THRESHOLD: f64 = 0.85;
+
+/// Finds the passage of `text` most similar to `quote` when the model did not copy it exactly:
+/// windows of 0.8–1.2× the quote's length slide over the whitespace-normalised text and are
+/// scored by character-bigram Dice similarity; the best window ≥ [`FUZZY_THRESHOLD`] is refined
+/// one character at a time. Returns the byte range in `text`.
+pub fn find_fuzzy(text: &str, quote: &str) -> Option<(usize, usize)> {
+    let (nq, _) = normalize(quote.trim());
+    let needle: Vec<char> = nq.chars().collect();
+    if needle.len() < 5 {
+        return None;
+    }
+    let (nt, map) = normalize(text);
+    if let Some(i) = nt.find(&nq) {
+        return Some((map[i].0, map[i + nq.len() - 1].1));
+    }
+    let hay: Vec<char> = nt.chars().collect();
+    let target = bigrams(&needle);
+    let mut best: Option<(f64, usize, usize)> = None; // (score, start char, len chars)
+    let consider = |start: usize, len: usize, best: &mut Option<(f64, usize, usize)>| {
+        if start + len <= hay.len() && len >= 2 {
+            let score = dice(&target, &hay[start..start + len]);
+            if best.is_none_or(|(b, _, _)| score > b) {
+                *best = Some((score, start, len));
+            }
+        }
+    };
+    let step = (needle.len() / 6).max(1);
+    for factor in [1.0, 0.9, 1.1, 0.8, 1.2] {
+        let len = ((needle.len() as f64) * factor).round() as usize;
+        let mut start = 0;
+        while start + len <= hay.len() {
+            consider(start, len, &mut best);
+            start += step;
+        }
+    }
+    let (score, start, len) = best?;
+    if score < FUZZY_THRESHOLD - 0.1 {
+        return None;
+    }
+    // Refine around the best window.
+    let mut refined = Some((score, start, len));
+    for s in start.saturating_sub(step)..=(start + step).min(hay.len()) {
+        for l in len.saturating_sub(step)..=len + step {
+            consider(s, l, &mut refined);
+        }
+    }
+    let (score, start, len) = refined?;
+    if score < FUZZY_THRESHOLD {
+        return None;
+    }
+    // Char offsets in the normalised text -> byte offsets in it -> source byte range.
+    let byte = |ci: usize| {
+        nt.char_indices()
+            .nth(ci)
+            .map(|(b, _)| b)
+            .unwrap_or(nt.len())
+    };
+    let (b0, b1) = (byte(start), byte(start + len));
+    Some((map[b0].0, map[b1 - 1].1))
+}
+
 /// Environments inside which an inline comment could break compilation or would be invisible.
 const UNSAFE_ENVS: &[&str] = &[
     "equation",
@@ -254,6 +339,19 @@ mod tests {
         assert_eq!(&t[s..e], "new\n  method for fast   typesetting");
         assert_eq!(find_quote(t, "short"), None);
         assert_eq!(find_quote(t, "not in the text at all"), None);
+    }
+
+    #[test]
+    fn fuzzy_matches_slightly_misquoted_passages() {
+        let t = "Intro.\nWe propose a novel  method that reduces latency by 40% on all benchmarks.\nNext.";
+        let (s, e) = find_fuzzy(
+            t,
+            "We propose a new method that reduces latency by 40 % on all benchmarks",
+        )
+        .unwrap();
+        assert!(t[s..e].starts_with("We propose a novel") && t[s..e].contains("benchmarks"));
+        assert!(find_fuzzy(t, "Completely unrelated sentence about cooking pasta.").is_none());
+        assert!(find_fuzzy(t, "abc").is_none());
     }
 
     #[test]

@@ -17,8 +17,8 @@ use std::{
     time::Duration,
 };
 
-/// One structured-output call: a system prompt shared by all calls of a job, a large shared
-/// document (sent first, so provider-side prompt caching can reuse it across calls), the
+/// One structured-output call: a system prompt, an optional large document shared by several
+/// calls (sent first, so provider-side prompt caching can reuse it; empty = none), the
 /// call-specific task, and the JSON schema the answer must follow.
 pub struct Request<'a> {
     pub system: &'a str,

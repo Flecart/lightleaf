@@ -1,0 +1,1 @@
+The abstract should end with a footnote pointing to the code and data, so readers can find the artifacts from the first page, e.g. "...\footnote{Our code and data are available at \url{https://github.com/...}.}". For anonymous submissions, use an anonymized link (e.g. anonymous.4open.science).

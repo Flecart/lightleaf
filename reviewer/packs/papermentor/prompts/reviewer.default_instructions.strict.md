@@ -1,0 +1,1 @@
+Produce at most {{maxComments}} comments. Only flag issues at [warning] or [critical] severity. Do not include [suggestion]-level comments. Your comments must be concise, limited to 1 to 3 sentences to ensure readability.

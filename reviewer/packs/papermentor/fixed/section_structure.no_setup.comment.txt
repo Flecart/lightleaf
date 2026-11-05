@@ -1,0 +1,1 @@
+There is no Experimental Setup section. Put the datasets, models, baselines, metrics, hyperparameters and implementation details in a dedicated "Experimental Setup" section (or the first subsection of "{{topLabel}}"), before any results. Then open "{{firstResultsLabel}}" directly with a summary of the key findings, followed by the results.

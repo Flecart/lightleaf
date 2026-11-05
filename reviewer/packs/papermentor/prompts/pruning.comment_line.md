@@ -1,0 +1,1 @@
+[{{index}}] [{{severity}}] [{{agentName}}] highlight: "{{highlightTextFirst100}}" — {{comment}}

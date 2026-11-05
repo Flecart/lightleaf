@@ -31,7 +31,10 @@ pub fn comment_macro(macro_name: &str, label: &str, text: &str) -> String {
     let label: String = label
         .replace('&', "and")
         .chars()
-        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | ',' | '-' | ':'))
+        // Characters that are safe in an optional argument (no `]`, braces, `%`, `#`, `\\`).
+        .filter(|c| {
+            c.is_alphanumeric() || matches!(c, ' ' | ',' | '-' | ':' | '+' | '(' | ')' | '.' | '/')
+        })
         .collect();
     format!(" \\{macro_name}[{label}]{{{}}}", escape(text))
 }
@@ -141,6 +144,10 @@ mod tests {
         assert_eq!(
             m,
             " \\AI[Methods, warning]{Use 50\\% less \\& cite \\{x\\}\\_1 \\textbackslash{}o/}"
+        );
+        assert_eq!(
+            comment_macro("AI", "Methods + Results Reviewer (hybrid), warning]{x", "t"),
+            " \\AI[Methods + Results Reviewer (hybrid), warningx]{t}"
         );
         let text = format!("A sentence.{m}\nB \\AI{{plain}} c \\AIbox{{keep}} \\ANG{{human}}.");
         let (clean, n) = remove_comments(&text, "AI");

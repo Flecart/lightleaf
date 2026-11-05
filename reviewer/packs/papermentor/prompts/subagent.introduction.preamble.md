@@ -1,0 +1,1 @@
+Review the introduction for the 5-question structure, storytelling (setting/villain/superhero), contributions list, and whether it sets the right expectations.

@@ -1,0 +1,1 @@
+Target venue: {{venue}} (ACL Rolling Review). In Limitations scope comments, say ARR can desk-reject papers that put main-paper content in Limitations.

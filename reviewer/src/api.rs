@@ -10,8 +10,7 @@ use crate::{
     config::Config,
     jobs::{self, JobRequest, store::JobStore},
     llm::{Llm, Usage},
-    prompts::Prompts,
-    review::Ctx,
+    review::{Ctx, Pack},
 };
 use axum::{
     Json, Router,
@@ -28,7 +27,7 @@ use tokio::sync::Semaphore;
 pub struct App {
     pub cfg: Arc<Config>,
     pub llm: Arc<Llm>,
-    pub prompts: Arc<Prompts>,
+    pub pack: Arc<dyn Pack>,
     pub jobs: JobStore,
     /// Limits how many jobs run at once (`LIGHTLEAF_REVIEW_MAX_JOBS`).
     pub slots: Arc<Semaphore>,
@@ -77,6 +76,8 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         "llmConfigured": app.cfg.llm_configured(),
         "provider": app.llm.provider(),
         "model": app.llm.model(),
+        "pack": app.pack.id(),
+        "venues": app.pack.venues().into_iter().map(|(id, label)| json!({ "id": id, "label": label })).collect::<Vec<_>>(),
         "running": running,
         "queued": queued,
     }))
@@ -109,7 +110,7 @@ async fn create_job(State(app): State<Shared>, Json(req): Json<JobRequest>) -> R
         let ctx = Arc::new(Ctx {
             llm: app2.llm.clone(),
             cfg: app2.cfg.clone(),
-            prompts: app2.prompts.clone(),
+            pack: app2.pack.clone(),
             usage: Arc::new(Usage::default()),
         });
         let progress = {

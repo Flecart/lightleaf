@@ -12,7 +12,6 @@ mod git;
 mod jobs;
 mod latex;
 mod llm;
-mod prompts;
 mod review;
 
 use std::sync::Arc;
@@ -68,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&cfg.work_dir)?;
     let app = Arc::new(api::App {
         llm: Arc::new(llm::Llm::new(provider(&cfg))?),
-        prompts: Arc::new(prompts::Prompts::load(cfg.prompts_dir.as_deref())),
+        pack: review::packs::with_settings(&cfg)?,
         jobs: Default::default(),
         slots: Arc::new(Semaphore::new(cfg.max_jobs)),
         cfg: cfg.clone(),

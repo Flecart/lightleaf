@@ -1,0 +1,1 @@
+"{{setupLabel}}" comes after the results in "{{firstResultsLabel}}". Move it before the results so readers know how the experiments were run before they read the numbers, and let "{{firstResultsLabel}}" open directly with the summary of findings.

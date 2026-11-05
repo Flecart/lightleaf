@@ -29,8 +29,8 @@ pub fn dice(a: &str, b: &str) -> f64 {
     2.0 * common as f64 / (na + nb) as f64
 }
 
-/// Two comments say the same thing: overlapping passages (≥ 50 % of the shorter one) with
-/// similar text (Dice ≥ 0.4), or near-identical text anywhere in the same file (Dice ≥ 0.8).
+/// Two comments say the same thing: in the same file, their passages overlap by at least half
+/// of the shorter one, and their texts are similar (Dice ≥ 0.4 after lowercasing).
 fn duplicates(a: &Comment, b: &Comment) -> bool {
     if a.file != b.file {
         return false;
@@ -40,23 +40,63 @@ fn duplicates(a: &Comment, b: &Comment) -> bool {
         .1
         .min(b.range.1)
         .saturating_sub(a.range.0.max(b.range.0));
+    if overlap == 0 {
+        return false;
+    }
     let shorter = (a.range.1 - a.range.0).min(b.range.1 - b.range.0).max(1);
-    let sim = dice(&a.text, &b.text);
-    (overlap * 2 >= shorter && sim >= 0.4) || sim >= 0.8
+    overlap * 2 >= shorter && dice(&a.text, &b.text) >= 0.4
 }
 
-/// Keeps one comment per group of duplicates (the most severe). Returns (kept, merged count).
-pub fn dedup(mut comments: Vec<Comment>) -> (Vec<Comment>, usize) {
-    comments.sort_by(|a, b| b.severity.cmp(&a.severity));
-    let mut kept: Vec<Comment> = Vec::new();
-    let mut merged = 0;
-    for c in comments {
-        if kept.iter().any(|k| duplicates(k, &c)) {
-            merged += 1;
+/// Which of two duplicates to drop: the less severe; on a tie, the one from a whole-paper
+/// reviewer when only one is; otherwise the shorter comment (the later one on equal length).
+fn loser(a: &Comment, b: &Comment) -> Side {
+    if a.severity != b.severity {
+        return if a.severity < b.severity {
+            Side::First
         } else {
-            kept.push(c);
+            Side::Second
+        };
+    }
+    if a.broad != b.broad {
+        return if a.broad { Side::First } else { Side::Second };
+    }
+    if a.text.chars().count() < b.text.chars().count() {
+        Side::First
+    } else {
+        Side::Second
+    }
+}
+
+enum Side {
+    First,
+    Second,
+}
+
+/// Removes duplicates pairwise in input order. Returns (kept, number removed).
+pub fn dedup(comments: Vec<Comment>) -> (Vec<Comment>, usize) {
+    let n = comments.len();
+    let mut removed = vec![false; n];
+    for i in 0..n {
+        for j in i + 1..n {
+            if removed[i] {
+                break;
+            }
+            if removed[j] || !duplicates(&comments[i], &comments[j]) {
+                continue;
+            }
+            match loser(&comments[i], &comments[j]) {
+                Side::First => removed[i] = true,
+                Side::Second => removed[j] = true,
+            }
         }
     }
+    let merged = removed.iter().filter(|r| **r).count();
+    let kept = comments
+        .into_iter()
+        .zip(removed)
+        .filter(|(_, r)| !r)
+        .map(|(c, _)| c)
+        .collect();
     (kept, merged)
 }
 
@@ -73,7 +113,26 @@ mod tests {
             quote: String::new(),
             file: "main.tex".into(),
             range,
+            broad: false,
         }
+    }
+
+    #[test]
+    fn broad_reviewer_loses_ties() {
+        let mut a = c(
+            Severity::Warning,
+            "Add a citation for this claim here.",
+            (0, 50),
+        );
+        a.broad = true;
+        let b = c(
+            Severity::Warning,
+            "Add a citation for this claim.",
+            (10, 50),
+        );
+        let (kept, _) = dedup(vec![a, b]);
+        assert_eq!(kept.len(), 1);
+        assert!(!kept[0].broad);
     }
 
     #[test]

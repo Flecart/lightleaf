@@ -31,6 +31,9 @@ pub async fn run(
     let options = Options {
         venue: req.options["venue"].as_str().unwrap_or("").to_string(),
         focus: req.options["focus"].as_str().unwrap_or("").to_string(),
+        strict: req.options["strict"]
+            .as_bool()
+            .unwrap_or(ctx.cfg.strict_default),
     };
     let outcome = review::run(ctx, doc, options, progress).await?;
     if outcome.comments.is_empty() {

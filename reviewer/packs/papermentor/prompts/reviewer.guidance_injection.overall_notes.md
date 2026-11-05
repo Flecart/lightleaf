@@ -1,0 +1,4 @@
+
+
+## General Type Notes
+{{overallNotes}}

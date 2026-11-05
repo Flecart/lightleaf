@@ -1,25 +1,25 @@
-//! The review: classify the paper, run a set of [`Reviewer`]s, merge and rank what they found.
+//! The review: a [`Pack`] plans which reviewers to run, the orchestrator ([`run`]) runs them,
+//! anchors what they found in the source, deduplicates and ranks.
 //!
-//! The orchestrator ([`run`]) does not know what any reviewer does. It builds one shared
-//! [`ReviewInput`], runs every applicable reviewer concurrently (bounded, with a timeout each),
-//! anchors each [`Finding`] to a source position, deduplicates and keeps the most important.
-//! A reviewer that fails is reported and skipped; it never fails the job.
+//! - A [`Pack`] is a complete review methodology (prompts, classification, which reviewers,
+//!   post-processing). Packs live in [`packs`]; `LIGHTLEAF_REVIEW_PACK` picks one.
+//! - A [`Reviewer`] is one specialised check: a prompt-driven model call ([`PromptReviewer`]),
+//!   a rule-based check, the reference checker, ...
 //!
-//! To add a reviewer, implement [`Reviewer`] and register it in [`registry::build`].
+//! The orchestrator knows neither packs' prompts nor what reviewers do. A reviewer that fails
+//! is reported and skipped; it never fails the job.
 
-mod classify;
 mod dedup;
-mod llm_reviewer;
-pub mod registry;
-mod schema;
+pub mod packs;
+mod prompt_reviewer;
+pub mod template;
 
-pub use classify::Classification;
+pub use prompt_reviewer::PromptReviewer;
 
 use crate::{
     config::Config,
     latex::{self, Document},
     llm::{Llm, Usage},
-    prompts::Prompts,
 };
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use tokio::{sync::Semaphore, task::JoinSet};
@@ -34,7 +34,7 @@ pub enum Severity {
 
 impl Severity {
     pub fn parse(s: &str) -> Severity {
-        match s {
+        match s.trim().to_ascii_lowercase().as_str() {
             "critical" => Severity::Critical,
             "warning" => Severity::Warning,
             _ => Severity::Suggestion,
@@ -69,32 +69,30 @@ pub struct Comment {
     /// Byte range of the quote in the file at review time.
     #[serde(skip)]
     pub range: (usize, usize),
+    /// From a reviewer that reads the whole paper; loses ties against section reviewers.
+    #[serde(skip)]
+    pub broad: bool,
 }
 
 /// Options chosen by the author for one review.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Options {
+    /// Target venue id (pack-specific, e.g. `neurips_2025`), or free text, or empty.
     pub venue: String,
     pub focus: String,
+    /// Only report issues that would matter to a reviewer; fewer comments.
+    pub strict: bool,
 }
 
-/// Everything a reviewer may look at; built once per review and shared.
-pub struct ReviewInput {
-    pub doc: Document,
-    /// The merged source wrapped for the model (identical across calls, so it is cached).
-    pub document: String,
-    /// The system prompt shared by all model calls of the review.
-    pub system: String,
-    pub classification: Classification,
-    pub options: Options,
+/// Model access shared by all reviewers of a job.
+pub struct Services {
     pub llm: Arc<Llm>,
     pub usage: Arc<Usage>,
-    pub prompts: Arc<Prompts>,
 }
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// One specialised reviewer (an LLM agent, a rule-based check, the reference checker, ...).
+/// One specialised reviewer.
 pub trait Reviewer: Send + Sync {
     /// Stable identifier, used in `LIGHTLEAF_REVIEW_DISABLED_AGENTS`.
     fn id(&self) -> &str;
@@ -102,21 +100,53 @@ pub trait Reviewer: Send + Sync {
     fn name(&self) -> &str;
     /// Most findings this reviewer may contribute.
     fn max_findings(&self) -> usize;
-    /// Whether it has anything to review in this paper (e.g. no appendix, no appendix reviewer).
-    fn applies(&self, _input: &ReviewInput) -> bool {
-        true
+    /// Reads the whole paper (loses dedup ties against section-specific reviewers).
+    fn broad(&self) -> bool {
+        false
     }
     fn review(
         self: Arc<Self>,
-        input: Arc<ReviewInput>,
+        services: Arc<Services>,
     ) -> BoxFuture<'static, anyhow::Result<Vec<Finding>>>;
 }
 
-/// Shared services the orchestrator needs.
+/// What a pack decided after reading the paper.
+pub struct Plan {
+    pub paper_type: String,
+    pub summary: String,
+    pub reviewers: Vec<Arc<dyn Reviewer>>,
+}
+
+/// A review methodology.
+pub trait Pack: Send + Sync {
+    fn id(&self) -> &'static str;
+    /// Venues this pack has specific guidance for, as (id, label).
+    fn venues(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    /// Reads the paper (typically one classification call) and builds the reviewers.
+    fn plan<'a>(
+        &'a self,
+        ctx: &'a Ctx,
+        doc: &'a Document,
+        options: &'a Options,
+    ) -> BoxFuture<'a, anyhow::Result<Plan>>;
+    /// Post-processing after deduplication (e.g. pruning in strict mode). Default: unchanged.
+    fn finalize<'a>(
+        &'a self,
+        _ctx: &'a Ctx,
+        comments: Vec<Comment>,
+        _options: &'a Options,
+    ) -> BoxFuture<'a, Vec<Comment>> {
+        Box::pin(async move { comments })
+    }
+}
+
+/// Shared services the orchestrator and packs need.
 pub struct Ctx {
     pub llm: Arc<Llm>,
     pub cfg: Arc<Config>,
-    pub prompts: Arc<Prompts>,
+    pub pack: Arc<dyn Pack>,
     pub usage: Arc<Usage>,
 }
 
@@ -130,21 +160,30 @@ pub struct Outcome {
     pub dropped_over_limit: usize,
 }
 
-/// Locates a finding's quote in the document's files.
-fn anchor(doc: &Document, agent: &str, f: Finding) -> Option<Comment> {
+/// Locates a finding's quote in the document's files (exactly, then fuzzily).
+fn anchor(doc: &Document, r: &dyn Reviewer, f: Finding) -> Option<Comment> {
     let text: String = f.text.trim().chars().take(1200).collect();
     if text.is_empty() {
         return None;
     }
-    doc.files.iter().find_map(|file| {
-        latex::find_quote(&file.text, &f.quote).map(|range| Comment {
-            agent: agent.to_string(),
-            severity: f.severity.clone(),
-            text: text.clone(),
-            quote: f.quote.clone(),
-            file: file.path.clone(),
-            range,
+    let exact = doc
+        .files
+        .iter()
+        .find_map(|file| latex::find_quote(&file.text, &f.quote).map(|range| (file, range)));
+    let (file, range) = exact.or_else(|| {
+        doc.files.iter().find_map(|file| {
+            latex::anchor::find_fuzzy(&file.text, &f.quote).map(|range| (file, range))
         })
+    })?;
+    Some(Comment {
+        agent: r.name().to_string(),
+        severity: f.severity,
+        text,
+        // The text actually found, so later re-anchoring finds it again.
+        quote: file.text[range.0..range.1].to_string(),
+        file: file.path.clone(),
+        range,
+        broad: r.broad(),
     })
 }
 
@@ -155,44 +194,34 @@ pub async fn run(
     options: Options,
     progress: impl Fn(String),
 ) -> anyhow::Result<Outcome> {
-    let merged = doc.merged();
-    if merged.len() > ctx.cfg.max_input_chars {
+    let total = doc.total_len();
+    if total > ctx.cfg.max_input_chars {
         anyhow::bail!(
-            "the document is too long to review ({} characters, limit {}); raise LIGHTLEAF_REVIEW_MAX_INPUT_CHARS",
-            merged.len(),
+            "the document is too long to review ({total} characters, limit {}); raise LIGHTLEAF_REVIEW_MAX_INPUT_CHARS",
             ctx.cfg.max_input_chars
         );
     }
-    let document = format!("<paper>\n{merged}</paper>");
-    let system = ctx.prompts.get("system");
-
     progress("Reading the paper".into());
-    let classification = classify::run(ctx, &system, &document, &merged).await?;
-
-    let input = Arc::new(ReviewInput {
-        doc,
-        document,
-        system,
-        classification,
-        options,
-        llm: ctx.llm.clone(),
-        usage: ctx.usage.clone(),
-        prompts: ctx.prompts.clone(),
-    });
-    let reviewers: Vec<Arc<dyn Reviewer>> = registry::build(&ctx.cfg)
+    let plan = ctx.pack.plan(ctx, &doc, &options).await?;
+    let reviewers: Vec<Arc<dyn Reviewer>> = plan
+        .reviewers
         .into_iter()
-        .filter(|r| !ctx.cfg.disabled_agents.iter().any(|d| d == r.id()) && r.applies(&input))
+        .filter(|r| !ctx.cfg.disabled_agents.iter().any(|d| d == r.id()))
         .collect();
     progress(format!("Running {} reviewers", reviewers.len()));
 
+    let services = Arc::new(Services {
+        llm: ctx.llm.clone(),
+        usage: ctx.usage.clone(),
+    });
     let sem = Arc::new(Semaphore::new(ctx.cfg.agent_concurrency));
     let timeout = Duration::from_secs(ctx.cfg.agent_timeout_secs);
     let mut set = JoinSet::new();
     for r in reviewers {
-        let (sem, input) = (sem.clone(), input.clone());
+        let (sem, services) = (sem.clone(), services.clone());
         set.spawn(async move {
             let _permit = sem.acquire_owned().await;
-            let res = match tokio::time::timeout(timeout, r.clone().review(input)).await {
+            let res = match tokio::time::timeout(timeout, r.clone().review(services)).await {
                 Ok(res) => res,
                 Err(_) => Err(anyhow::anyhow!("timed out after {} s", timeout.as_secs())),
             };
@@ -206,12 +235,15 @@ pub async fn run(
         match res {
             Ok(findings) => {
                 for f in findings.into_iter().take(r.max_findings()) {
-                    match anchor(&input.doc, r.name(), f) {
+                    if options.strict && f.severity == Severity::Suggestion {
+                        continue;
+                    }
+                    match anchor(&doc, r.as_ref(), f) {
                         Some(c) => raw.push(c),
                         None => unanchored += 1,
                     }
                 }
-                progress(format!("{} reviewer finished", r.name()));
+                progress(format!("{} finished", r.name()));
             }
             Err(e) => {
                 tracing::warn!("reviewer {} failed: {e:#}", r.id());
@@ -220,14 +252,15 @@ pub async fn run(
         }
     }
 
-    let (mut comments, merged_duplicates) = dedup::dedup(raw);
-    comments.sort_by(|a, b| b.severity.cmp(&a.severity));
+    let (comments, merged_duplicates) = dedup::dedup(raw);
+    let mut comments = ctx.pack.finalize(ctx, comments, &options).await;
+    comments.sort_by(|a, b| b.severity.cmp(&a.severity).then(a.broad.cmp(&b.broad)));
     let dropped_over_limit = comments.len().saturating_sub(ctx.cfg.max_comments);
     comments.truncate(ctx.cfg.max_comments);
     comments.sort_by(|a, b| a.file.cmp(&b.file).then(a.range.0.cmp(&b.range.0)));
     Ok(Outcome {
-        paper_type: input.classification.paper_type.clone(),
-        summary: input.classification.summary.clone(),
+        paper_type: plan.paper_type,
+        summary: plan.summary,
         comments,
         failed_agents: failed,
         unanchored,

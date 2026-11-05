@@ -1,0 +1,2 @@
+This paper has been classified as: "{{paperType}}" — {{paperTypeSummary}}
+Review the paper against the type-specific writing guidelines provided in the skills reference. Check whether the paper follows the recommended structure, includes the expected elements, and addresses the criteria that reviewers of this paper type typically look for. Focus on high-level structural and content issues specific to this paper type, not general writing style.
