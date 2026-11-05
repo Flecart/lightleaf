@@ -21,7 +21,11 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 
 - **Overleaf-like UI** — file tree with drag & drop, CodeMirror 6 editor, PDF preview, resizable panes, editor/PDF/split layouts, light & dark themes.
 - **Real-time collaboration** — conflict-free editing with [Yjs](https://yjs.dev) CRDTs (server side: [`yrs`](https://github.com/y-crdt/y-crdt)), live cursors and selections, presence avatars, project chat.
-- **LaTeX** — `pdflatex`, `xelatex`, `lualatex` (through `latexmk` when installed, otherwise an automatic bibtex/biber/makeindex rerun pipeline) or `tectonic`.
+- **LaTeX** — [folio](https://github.com/flecart/folio), a LaTeX compiler written in Rust and the default for new
+  projects (no SyncTeX yet; documents it cannot handle are compiled through its slimtex fallback). `pdflatex` is still
+  available (through `latexmk` when installed, otherwise an automatic bibtex/biber/makeindex rerun pipeline), but
+  every pdflatex compile carries a warning to switch to folio. Imported projects that ask for XeLaTeX, LuaLaTeX or
+  Tectonic are compiled with folio.
 - **Typst** — first-class support, with syntax highlighting and an outline.
 - **Error log** — parsed errors, warnings and bad boxes, clickable to jump to the line; inline diagnostics in the editor.
 - **SyncTeX** — double-click the PDF to jump to the source, and jump from the source to the PDF.
@@ -89,7 +93,8 @@ docker run --rm -v lightleaf_lightleaf-data:/data -v "$PWD":/backup debian:bookw
 
 ### Bare metal
 
-Requirements: `git`, and whichever compilers you want (`pdflatex`/`xelatex`/`lualatex`, `latexmk`, `tectonic`, `typst`, `synctex`). Lightleaf detects them on start-up.
+Requirements: `git`, and whichever compilers you want (`folio`, `pdflatex`, `latexmk`, `typst`, `synctex`). Lightleaf detects them on start-up
+(by name on `PATH`; for folio, symlink or install its `folio` binary there).
 
 ```bash
 # build
