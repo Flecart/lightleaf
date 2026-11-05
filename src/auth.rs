@@ -66,12 +66,13 @@ pub async fn user_from_session(state: &AppState, headers: &HeaderMap) -> AppResu
         .db(move |c| {
             let t = now();
             let found = c
-                .query_row(
+                .prepare_cached(
                     "SELECT u.id, u.email, u.name, u.is_admin, s.last_seen FROM sessions s JOIN users u ON u.id = s.user_id
                      WHERE s.token_hash = ?1 AND s.expires_at > ?2 AND s.last_seen > ?3",
-                    params![hash, t, t - idle],
-                    |r| Ok((row_to_user(r)?, r.get::<_, i64>(4)?)),
-                )
+                )?
+                .query_row(params![hash, t, t - idle], |r| {
+                    Ok((row_to_user(r)?, r.get::<_, i64>(4)?))
+                })
                 .optional()?;
             let Some((user, last_seen)) = found else {
                 return Ok(None);

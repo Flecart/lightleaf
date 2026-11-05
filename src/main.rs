@@ -56,8 +56,17 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::Config::from_env();
     std::fs::create_dir_all(cfg.projects_dir())?;
     std::fs::create_dir_all(cfg.build_dir())?;
-    let conn = db::open(&cfg.data_dir.join("lightleaf.db"))?;
-    let state = Arc::new(state::AppState::new(cfg.clone(), conn));
+    let db_path = cfg.data_dir.join("lightleaf.db");
+    // The CLI needs one connection; the server a few, so reads run in parallel.
+    let pool = if command.is_some_and(|c| c != "serve") {
+        1
+    } else {
+        cfg.db_connections
+    };
+    let conns = (0..pool)
+        .map(|_| db::open(&db_path))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let state = Arc::new(state::AppState::new(cfg.clone(), conns));
 
     if let Some(c) = command
         && c != "serve"

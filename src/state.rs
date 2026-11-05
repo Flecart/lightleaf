@@ -6,7 +6,10 @@ use crate::{
 use rusqlite::{Connection, OptionalExtension};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 use tokio::sync::Semaphore;
 
@@ -14,7 +17,10 @@ pub type SharedState = Arc<AppState>;
 
 pub struct AppState {
     pub cfg: Config,
-    db: Arc<Mutex<Connection>>,
+    /// A small pool of SQLite connections. With WAL, readers run in parallel and never wait for
+    /// a writer; writers are serialised by SQLite itself (busy_timeout).
+    db: Arc<Vec<Mutex<Connection>>>,
+    next_db: AtomicUsize,
     pub hub: Hub,
     pub compile_slots: Semaphore,
     /// Bounds concurrent Argon2 computations so a login flood cannot exhaust memory.
@@ -55,14 +61,19 @@ impl Role {
 }
 
 impl AppState {
-    pub fn new(cfg: Config, conn: Connection) -> Self {
+    pub fn new(cfg: Config, conns: Vec<Connection>) -> Self {
+        assert!(
+            !conns.is_empty(),
+            "at least one database connection is required"
+        );
         AppState {
             compile_slots: Semaphore::new(cfg.max_concurrent_compiles),
             hash_slots: Semaphore::new(4),
             limits: crate::security::Limits::default(),
             recent_compiles: Mutex::new(HashMap::new()),
             cfg,
-            db: Arc::new(Mutex::new(conn)),
+            db: Arc::new(conns.into_iter().map(Mutex::new).collect()),
+            next_db: AtomicUsize::new(0),
             hub: Hub::default(),
             locks: Mutex::new(HashMap::new()),
         }
@@ -75,8 +86,14 @@ impl AppState {
         R: Send + 'static,
     {
         let db = self.db.clone();
+        let start = self.next_db.fetch_add(1, Ordering::Relaxed);
         let res = tokio::task::spawn_blocking(move || {
-            let conn = db.lock().unwrap_or_else(|p| p.into_inner());
+            // Take the first idle connection, starting at a rotating offset; wait only if all
+            // are busy.
+            let n = db.len();
+            let conn = (0..n)
+                .find_map(|i| db[(start + i) % n].try_lock().ok())
+                .unwrap_or_else(|| db[start % n].lock().unwrap_or_else(|p| p.into_inner()));
             f(&conn)
         })
         .await
@@ -126,13 +143,14 @@ impl AppState {
         let pid = project_id.to_string();
         let r: Option<String> = self
             .db(move |c| {
-                c.query_row(
+                c.prepare_cached(
                     "SELECT CASE WHEN p.owner_id = ?2 THEN 'owner' ELSE m.role END
                      FROM projects p LEFT JOIN members m ON m.project_id = p.id AND m.user_id = ?2
                      WHERE p.id = ?1",
-                    rusqlite::params![pid, user_id],
-                    |r| r.get::<_, Option<String>>(0),
-                )
+                )?
+                .query_row(rusqlite::params![pid, user_id], |r| {
+                    r.get::<_, Option<String>>(0)
+                })
                 .optional()
                 .map(|o| o.flatten())
             })

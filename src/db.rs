@@ -60,7 +60,7 @@ pub fn open(path: &Path) -> anyhow::Result<Connection> {
     }
     let conn = Connection::open(path)?;
     conn.execute_batch(
-        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY; PRAGMA mmap_size=268435456;",
     )?;
     conn.execute_batch(SCHEMA)?;
     Ok(conn)

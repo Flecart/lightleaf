@@ -20,6 +20,8 @@ pub struct Config {
     /// Optional command prefix used to sandbox compilers, e.g. `bwrap --unshare-net ...`.
     pub compile_wrapper: Vec<String>,
     pub max_upload_bytes: usize,
+    /// Size of the SQLite connection pool.
+    pub db_connections: usize,
     pub secure_cookies: bool,
     /// Honour `X-Forwarded-For` from a reverse proxy when identifying clients (rate limiting).
     pub trust_proxy: bool,
@@ -72,6 +74,10 @@ impl Config {
                 .unwrap_or(50)
                 * 1024
                 * 1024,
+            db_connections: env("LIGHTLEAF_DB_CONNECTIONS")
+                .and_then(|v| v.parse().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(4),
             secure_cookies: matches!(
                 env("LIGHTLEAF_SECURE_COOKIES").as_deref(),
                 Some("1") | Some("true")
