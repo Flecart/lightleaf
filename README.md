@@ -226,6 +226,13 @@ cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api and /gi
 cargo test
 ```
 
+## Scaling
+
+A single process comfortably serves about 1000 concurrent editors; compiling is the only real CPU cost. See
+[docs/SCALING.md](docs/SCALING.md) for the capacity model, deployment designs for a public instance (one machine →
+stateless compile workers → sharded monolith), and [tools/loadtest](tools/loadtest/README.md) to measure your own
+server.
+
 ## Security notes
 
 - TeX runs with restricted shell escape (`shell_escape=p`) and paranoid file access (`openin_any=p`, `openout_any=p`), so pdfLaTeX/XeLaTeX documents cannot read or write files outside the project. **LuaLaTeX is the exception:** its Lua interpreter can read files on its own, so the read restriction does not apply to it. Typst is sandboxed to the project root.
