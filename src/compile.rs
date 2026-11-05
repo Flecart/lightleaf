@@ -1,5 +1,5 @@
-//! Compilation of LaTeX (pdflatex / xelatex / lualatex, optionally through latexmk or
-//! tectonic, or the experimental folio compiler) and Typst projects, plus SyncTeX lookups.
+//! Compilation of LaTeX (folio, or pdflatex through latexmk or a manual rerun pipeline) and
+//! Typst projects, plus SyncTeX lookups.
 //!
 //! Sources are mirrored incrementally into a per-project build directory so auxiliary files
 //! never pollute the git repository and reruns stay fast. A global semaphore caps the number
@@ -48,12 +48,10 @@ fn tools() -> &'static Tools {
     T.get_or_init(|| Tools {
         latexmk: which("latexmk") && which("perl"),
         synctex: which("synctex"),
-        compilers: [
-            "pdflatex", "xelatex", "lualatex", "tectonic", "folio", "typst",
-        ]
-        .into_iter()
-        .filter(|c| which(c))
-        .collect(),
+        compilers: ["pdflatex", "folio", "typst"]
+            .into_iter()
+            .filter(|c| which(c))
+            .collect(),
     })
 }
 
@@ -62,10 +60,33 @@ pub fn available_compilers() -> Vec<&'static str> {
 }
 
 pub fn is_known_compiler(c: &str) -> bool {
-    matches!(
-        c,
-        "pdflatex" | "xelatex" | "lualatex" | "tectonic" | "folio" | "typst"
-    )
+    matches!(c, "pdflatex" | "folio" | "typst")
+}
+
+/// Compiler for new LaTeX projects: folio when installed, pdflatex otherwise.
+pub fn default_latex_compiler() -> &'static str {
+    if tools().compilers.contains(&"folio") {
+        "folio"
+    } else {
+        "pdflatex"
+    }
+}
+
+/// Attached to every pdflatex compile: folio is the LaTeX compiler projects should use.
+fn pdflatex_warning() -> Issue {
+    let mut message = "pdflatex is deprecated here: switch this project to folio \
+                       (project menu → Settings → Compiler)"
+        .to_string();
+    if !tools().compilers.contains(&"folio") {
+        message.push_str(". Folio is not installed on this server yet; ask an administrator.");
+    }
+    Issue {
+        level: "warning",
+        file: None,
+        line: None,
+        message,
+        context: String::new(),
+    }
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -139,10 +160,6 @@ async fn run(
 ) -> std::io::Result<RunResult> {
     let mut full: Vec<String> = state.cfg.compile_wrapper.clone();
     full.extend_from_slice(argv);
-    // LuaTeX resolves its own TeX tree through absolute paths, which `openin_any=p` rejects
-    // (it can also read files from Lua regardless), so the read restriction only applies to
-    // the other engines. Use LIGHTLEAF_COMPILE_WRAPPER to sandbox LuaLaTeX for untrusted users.
-    let lua = argv.iter().any(|a| a == "lualatex" || a == "-pdflua");
     let mut cmd = Command::new(&full[0]);
     cmd.args(&full[1..])
         .current_dir(dir)
@@ -152,7 +169,7 @@ async fn run(
         // Hardening for TeX: restricted shell escape only, restricted file access, unwrapped logs.
         .env("shell_escape", "p")
         .env("openout_any", "p")
-        .env("openin_any", if lua { "a" } else { "p" })
+        .env("openin_any", "p")
         .env("max_print_line", "10000")
         .env("error_line", "254")
         .env("half_error_line", "238")
@@ -193,44 +210,21 @@ fn stem(main: &str) -> String {
         .unwrap_or_else(|| main.to_string())
 }
 
-async fn compile_latex(
+async fn compile_pdflatex(
     state: &SharedState,
     dir: &FsPath,
-    engine: &str,
     main: &str,
     deadline: Instant,
 ) -> std::io::Result<(String, bool)> {
     let s = stem(main);
     let mut transcript = String::new();
-    if engine == "tectonic" {
-        let r = run(
-            state,
-            dir,
-            &[
-                "tectonic".into(),
-                "--synctex".into(),
-                "--keep-logs".into(),
-                "--keep-intermediates".into(),
-                main.into(),
-            ],
-            deadline,
-        )
-        .await?;
-        let log = std::fs::read_to_string(dir.join(format!("{s}.log"))).unwrap_or_default();
-        return Ok((if log.is_empty() { r.output } else { log }, r.timed_out));
-    }
     if tools().latexmk {
-        let flag = match engine {
-            "xelatex" => "-pdfxe",
-            "lualatex" => "-pdflua",
-            _ => "-pdf",
-        };
         let r = run(
             state,
             dir,
             &[
                 "latexmk",
-                flag,
+                "-pdf",
                 "-f",
                 "-interaction=nonstopmode",
                 "-file-line-error",
@@ -245,9 +239,9 @@ async fn compile_latex(
             .unwrap_or_else(|_| r.output.clone());
         return Ok((log, r.timed_out));
     }
-    // Manual pipeline: engine → (bibtex|biber) → engine (until references settle).
+    // Manual pipeline: pdflatex → (bibtex|biber) → pdflatex (until references settle).
     let tex = [
-        engine,
+        "pdflatex",
         "-interaction=nonstopmode",
         "-file-line-error",
         "-synctex=1",
@@ -640,8 +634,9 @@ pub async fn compile(
     } else if compiler == "folio" {
         compile_folio(&state, &build, &main, deadline).await?
     } else {
-        let (log, t) = compile_latex(&state, &build, &compiler, &main, deadline).await?;
-        let issues = parse_latex_log(&log);
+        let (log, t) = compile_pdflatex(&state, &build, &main, deadline).await?;
+        let mut issues = parse_latex_log(&log);
+        issues.insert(0, pdflatex_warning());
         (log, t, issues)
     };
     let elapsed = compile_started.elapsed().as_millis() as u64;

@@ -374,7 +374,7 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
     {
         return ("xelatex".into(), format!("{main} uses a CJK class"));
     }
-    ("pdflatex".into(), "default engine".into())
+    ("folio".into(), "default engine".into())
 }
 
 /// Returns the first of `pkgs` that the (comment-free) source loads.
@@ -395,19 +395,17 @@ fn loads_package(code: &str, pkgs: &[&'static str]) -> Option<&'static str> {
     pkgs.iter().copied().find(|p| loaded.contains(p))
 }
 
-/// Maps the wanted engine onto what this server has installed.
+/// Maps the wanted engine onto what this server has installed. Lightleaf runs folio and
+/// pdflatex for LaTeX, so a document that asks for another engine (XeLaTeX, LuaLaTeX, ...)
+/// gets folio, or pdflatex when folio is missing; the caller tells the user about the switch.
 pub fn choose_compiler(wanted: &str, installed: &[&str]) -> String {
     let has = |c: &str| installed.contains(&c);
     if has(wanted) {
         return wanted.to_string();
     }
     let fallbacks: &[&str] = match wanted {
-        // fontspec & friends work with either Unicode engine.
-        "xelatex" => &["lualatex", "tectonic", "pdflatex"],
-        "lualatex" => &["xelatex", "pdflatex"],
-        "tectonic" => &["xelatex", "lualatex", "pdflatex"],
         "typst" => &["typst"],
-        _ => &["pdflatex", "lualatex", "xelatex", "tectonic"],
+        _ => &["folio", "pdflatex"],
     };
     fallbacks
         .iter()
@@ -503,7 +501,7 @@ mod tests {
             "\\documentclass{article}\\begin{document}\\end{document}",
         )
         .unwrap();
-        assert_eq!(detect(&d).wanted, "pdflatex");
+        assert_eq!(detect(&d).wanted, "folio");
         std::fs::write(d.join("latexmkrc"), "$pdf_mode = 4; # lualatex\n").unwrap();
         assert_eq!(detect(&d).wanted, "lualatex");
         std::fs::write(
@@ -525,10 +523,9 @@ mod tests {
             (det.main_file.as_str(), det.wanted.as_str()),
             ("src/main.typ", "typst")
         );
-        assert_eq!(
-            choose_compiler("xelatex", &["pdflatex", "lualatex"]),
-            "lualatex"
-        );
+        assert_eq!(choose_compiler("xelatex", &["pdflatex", "folio"]), "folio");
+        assert_eq!(choose_compiler("lualatex", &["pdflatex"]), "pdflatex");
+        assert_eq!(choose_compiler("folio", &["pdflatex"]), "pdflatex");
         assert_eq!(choose_compiler("pdflatex", &["pdflatex"]), "pdflatex");
         std::fs::remove_dir_all(d).ok();
     }

@@ -162,11 +162,15 @@ pub async fn create(
     let (compiler, main, content) = match req.template.as_deref() {
         Some("typst") => ("typst", "main.typ", TYPST_TEMPLATE),
         Some("blank") => (
-            "pdflatex",
+            crate::compile::default_latex_compiler(),
             "main.tex",
             "\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n",
         ),
-        _ => ("pdflatex", "main.tex", LATEX_TEMPLATE),
+        _ => (
+            crate::compile::default_latex_compiler(),
+            "main.tex",
+            LATEX_TEMPLATE,
+        ),
     };
     let id = insert_project(&state, &user, &name, compiler, main).await?;
     let dir = state.cfg.project_dir(&id);
@@ -255,7 +259,7 @@ pub async fn import_zip(
     init_repo(&dir).await?;
     commit_all(&dir, None, "Import project", Some(&user)).await?;
     let note = (compiler != det.wanted)
-        .then(|| format!("{} is not installed here, using {compiler}", det.wanted));
+        .then(|| format!("{} is not available here, using {compiler}", det.wanted));
     Ok(Json(json!({
         "id": id,
         "name": name,

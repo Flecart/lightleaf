@@ -16,6 +16,6 @@ labels: bug
 - Lightleaf version / commit:
 - Deployment: Docker / bare metal
 - Browser:
-- Compiler (pdflatex, xelatex, lualatex, tectonic, folio, typst):
+- Compiler (folio, pdflatex, typst):
 
 **Logs** (server log or compile log, if relevant)
