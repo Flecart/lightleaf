@@ -1,7 +1,7 @@
 # 🍃 Lightleaf
 
 [![CI](https://github.com/Flecart/lightleaf/actions/workflows/ci.yml/badge.svg)](https://github.com/Flecart/lightleaf/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 **A fast, lightweight, self-hosted collaborative LaTeX & Typst editor — with real git integration.**
 
@@ -197,4 +197,9 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Lightleaf is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, modify
+and self-host it freely. If you run a modified version as a network service, you must offer its source code to your
+users.
+
+For licensing under other terms (for example, to embed Lightleaf in a proprietary product without the AGPL's
+obligations), contact the maintainer.
