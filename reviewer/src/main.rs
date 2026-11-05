@@ -12,6 +12,7 @@ mod git;
 mod jobs;
 mod latex;
 mod llm;
+mod references;
 mod review;
 
 use std::sync::Arc;

@@ -1,6 +1,7 @@
 //! Jobs Lightleaf asks for. Each kind is one module with a `run` function:
 //!
 //! - [`review`]: run the reviewers and write their comments into the source,
+//! - [`references`]: check the bibliography against Semantic Scholar,
 //! - [`clear`]: remove every review comment.
 //!
 //! All of them change the project the same way, through [`publish::publish`]: edit a fresh
@@ -9,6 +10,7 @@
 
 mod clear;
 mod publish;
+mod references;
 mod review;
 pub mod store;
 
@@ -46,6 +48,7 @@ pub struct JobRequest {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     Review,
+    References,
     Clear,
 }
 
@@ -53,6 +56,7 @@ impl Kind {
     pub fn parse(s: &str) -> Option<Kind> {
         match s {
             "review" => Some(Kind::Review),
+            "references" => Some(Kind::References),
             "clear" => Some(Kind::Clear),
             _ => None,
         }
@@ -66,7 +70,8 @@ impl Kind {
 
 impl JobRequest {
     pub fn validate(&self) -> Result<Kind, String> {
-        let kind = Kind::parse(&self.kind).ok_or("kind must be \"review\" or \"clear\"")?;
+        let kind = Kind::parse(&self.kind)
+            .ok_or("kind must be \"review\", \"references\" or \"clear\"")?;
         if self.project_id.is_empty() || !self.project_id.chars().all(|c| c.is_ascii_alphanumeric())
         {
             return Err("invalid projectId".into());
@@ -121,6 +126,7 @@ pub async fn run(
         let repo = Repo::clone(&req.git_url, &req.token, work.join("repo")).await?;
         match kind {
             Kind::Review => review::run(&ctx, &req, &repo, progress.as_ref()).await,
+            Kind::References => references::run(&ctx, &req, &repo, progress.as_ref()).await,
             Kind::Clear => clear::run(&ctx, &req, &repo, progress.as_ref()).await,
         }
     }

@@ -33,6 +33,9 @@ pub struct Config {
     pub prompts_dir: Option<PathBuf>,
     /// Review methodology (`papermentor` or `lightleaf`).
     pub pack: String,
+    /// Semantic Scholar access for the reference checker.
+    pub s2: crate::references::s2::Settings,
+    pub references_max_entries: usize,
     /// Default for strict mode when a request does not say.
     pub strict_default: bool,
     pub skip_anonymity: bool,
@@ -135,6 +138,27 @@ impl Config {
                 .unwrap_or_default(),
             prompts_dir: env("LIGHTLEAF_REVIEW_PROMPTS_DIR").map(PathBuf::from),
             pack,
+            s2: {
+                let api_key =
+                    env("LIGHTLEAF_S2_API_KEY").or_else(|| env("SEMANTIC_SCHOLAR_API_KEY"));
+                // Without a key, requests share Semantic Scholar's public pool: go slower.
+                let default_interval = if api_key.is_some() { 1100 } else { 3500 };
+                crate::references::s2::Settings {
+                    base_url: env("LIGHTLEAF_S2_BASE_URL")
+                        .unwrap_or_else(|| "https://api.semanticscholar.org/graph/v1".into()),
+                    min_interval: std::time::Duration::from_millis(num(
+                        "LIGHTLEAF_S2_MIN_INTERVAL_MS",
+                        default_interval,
+                    )),
+                    max_retries: num("LIGHTLEAF_S2_MAX_RETRIES", 5),
+                    timeout: std::time::Duration::from_millis(num(
+                        "LIGHTLEAF_S2_TIMEOUT_MS",
+                        30_000,
+                    )),
+                    api_key,
+                }
+            },
+            references_max_entries: num("LIGHTLEAF_REFERENCES_MAX_ENTRIES", 200),
             strict_default: flag("LIGHTLEAF_REVIEW_STRICT"),
             skip_anonymity: flag("LIGHTLEAF_REVIEW_SKIP_ANONYMITY"),
             skip_source_comments: flag("LIGHTLEAF_REVIEW_SKIP_SOURCE_COMMENTS"),
