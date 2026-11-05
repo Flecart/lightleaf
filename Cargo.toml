@@ -1,6 +1,6 @@
 [package]
 name = "lightleaf"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 edition = "2024"
 description = "Fast, lightweight, self-hosted collaborative LaTeX & Typst editor with git integration"
 license = "AGPL-3.0-only"

@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "lightleaf"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -1035,7 +1035,7 @@ dependencies = [
 
 [[package]]
 name = "lightleaf-reviewer"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 dependencies = [
  "anyhow",
  "axum",
