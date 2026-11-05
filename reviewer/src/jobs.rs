@@ -249,7 +249,7 @@ async fn run_in(
             if written == 1 { "" } else { "s" },
             req.requested_by.name,
             req.requested_by.email,
-            ctx.claude.model,
+            ctx.llm.model(),
             agents.join(", "),
             latex::PACKAGE,
         );
@@ -288,7 +288,8 @@ fn summary(
         "failedAgents": o.failed_agents.iter().map(|(a, e)| json!({ "agent": a, "error": e })).collect::<Vec<_>>(),
         "comments": o.comments,
         "commit": commit,
-        "model": ctx.claude.model,
+        "model": ctx.llm.model(),
+        "provider": ctx.llm.provider(),
         "usage": ctx.usage.to_json(),
     })
 }

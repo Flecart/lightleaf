@@ -1,7 +1,7 @@
 //! lightleaf-reviewer: the AI review service for Lightleaf.
 //!
 //! A separate process that Lightleaf calls over HTTP. It reads a project over git with a
-//! short-lived, project-scoped token, runs a team of reviewer agents on Claude, and pushes
+//! short-lived, project-scoped token, runs a team of reviewer agents on Claude or an OpenAI-compatible model, and pushes
 //! the comments back as `\ANG[AI: …]{…}` macros in the LaTeX source. It holds no database and
 //! no persistent state: jobs live in memory, checkouts in a temporary directory.
 //!
@@ -16,6 +16,8 @@ mod config;
 mod git;
 mod jobs;
 mod latex;
+mod llm;
+mod openai;
 mod pipeline;
 mod prompts;
 
@@ -37,7 +39,7 @@ use tokio::sync::Semaphore;
 
 struct App {
     cfg: Arc<config::Config>,
-    claude: Arc<claude::Claude>,
+    llm: Arc<llm::Llm>,
     prompts: Arc<prompts::Prompts>,
     jobs: Mutex<HashMap<String, Job>>,
     slots: Arc<Semaphore>,
@@ -72,7 +74,8 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
     Json(json!({
         "ok": true,
         "version": env!("CARGO_PKG_VERSION"),
-        "llmConfigured": app.cfg.anthropic_api_key.is_some(),
+        "llmConfigured": app.cfg.llm_configured(),
+        "provider": app.cfg.provider,
         "model": app.cfg.model,
         "running": count("running"),
         "queued": count("queued"),
@@ -105,11 +108,8 @@ async fn create_job(State(app): State<Shared>, Json(req): Json<JobRequest>) -> R
     if let Err(e) = req.validate() {
         return err(StatusCode::BAD_REQUEST, e);
     }
-    if req.kind == "review" && app.cfg.anthropic_api_key.is_none() {
-        return err(
-            StatusCode::CONFLICT,
-            "AI review is not configured on the server (ANTHROPIC_API_KEY is not set)",
-        );
+    if req.kind == "review" && !app.cfg.llm_configured() {
+        return err(StatusCode::CONFLICT, app.cfg.llm_missing_message());
     }
     let job = {
         let mut jobs = app.jobs.lock().unwrap();
@@ -152,10 +152,10 @@ async fn create_job(State(app): State<Shared>, Json(req): Json<JobRequest>) -> R
             j.stage = "Starting".into();
         });
         let ctx = Arc::new(pipeline::Ctx {
-            claude: app2.claude.clone(),
+            llm: app2.llm.clone(),
             cfg: app2.cfg.clone(),
             prompts: app2.prompts.clone(),
-            usage: Arc::new(claude::Usage::default()),
+            usage: Arc::new(llm::Usage::default()),
         });
         let updater = {
             let (app3, id3) = (app2.clone(), id.clone());
@@ -227,24 +227,34 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let cfg = Arc::new(config::Config::from_env()?);
-    if cfg.anthropic_api_key.is_none() {
+    if !cfg.llm_configured() {
         tracing::warn!(
-            "ANTHROPIC_API_KEY is not set: reviews will be refused (removing comments still works)"
+            "{}: reviews will be refused (removing comments still works)",
+            cfg.llm_missing_message()
         );
     }
-    let claude = Arc::new(claude::Claude::new(
-        cfg.anthropic_base_url.clone(),
-        cfg.anthropic_api_key.clone().unwrap_or_default(),
-        cfg.model.clone(),
-        cfg.effort.clone(),
-        cfg.fallbacks,
-    )?);
+    let llm = Arc::new(match cfg.provider.as_str() {
+        "openai" => llm::Llm::OpenAi(openai::OpenAi::new(
+            cfg.openai_base_url.clone(),
+            cfg.openai_api_key.clone().unwrap_or_default(),
+            cfg.model.clone(),
+            cfg.openai_reasoning_effort.clone(),
+            cfg.openai_max_tokens_field.clone(),
+        )?),
+        _ => llm::Llm::Anthropic(claude::Claude::new(
+            cfg.anthropic_base_url.clone(),
+            cfg.anthropic_api_key.clone().unwrap_or_default(),
+            cfg.model.clone(),
+            cfg.effort.clone(),
+            cfg.fallbacks,
+        )?),
+    });
     std::fs::create_dir_all(&cfg.work_dir)?;
     let app = Arc::new(App {
         prompts: Arc::new(prompts::Prompts::load(cfg.prompts_dir.as_deref())),
         slots: Arc::new(Semaphore::new(cfg.max_jobs)),
         jobs: Mutex::new(HashMap::new()),
-        claude,
+        llm,
         cfg: cfg.clone(),
     });
 
@@ -260,8 +270,9 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind).await?;
     tracing::info!(
-        "lightleaf-reviewer listening on http://{} (model {})",
+        "lightleaf-reviewer listening on http://{} ({} model {})",
         cfg.bind,
+        cfg.provider,
         cfg.model
     );
     axum::serve(listener, router)

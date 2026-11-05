@@ -10,9 +10,9 @@
 //!    comments are merged; the most severe are kept up to the configured maximum.
 
 use crate::{
-    claude::{Claude, Request, Usage},
     config::Config,
     latex::{self, Document},
+    llm::{Llm, Request, Usage},
     prompts::Prompts,
 };
 use serde_json::{Value, json};
@@ -271,7 +271,7 @@ fn dedup(mut comments: Vec<Comment>) -> (Vec<Comment>, usize) {
 }
 
 pub struct Ctx {
-    pub claude: Arc<Claude>,
+    pub llm: Arc<Llm>,
     pub cfg: Arc<Config>,
     pub prompts: Arc<Prompts>,
     pub usage: Arc<Usage>,
@@ -325,7 +325,7 @@ pub async fn review(
     );
     let schema = classify_schema();
     let class = ctx
-        .claude
+        .llm
         .json(
             &Request {
                 system: &system,
@@ -410,8 +410,8 @@ pub async fn review(
                 opts.focus.trim()
             ));
         }
-        let (claude, usage, sem, schema, system, document) = (
-            ctx.claude.clone(),
+        let (llm, usage, sem, schema, system, document) = (
+            ctx.llm.clone(),
             ctx.usage.clone(),
             sem.clone(),
             schema.clone(),
@@ -428,7 +428,7 @@ pub async fn review(
                 schema: &schema,
                 max_tokens: 16000,
             };
-            let res = tokio::time::timeout(timeout, claude.json(&req, &usage)).await;
+            let res = tokio::time::timeout(timeout, llm.json(&req, &usage)).await;
             let res = match res {
                 Ok(r) => r,
                 Err(_) => Err(anyhow::anyhow!("timed out after {} s", timeout.as_secs())),

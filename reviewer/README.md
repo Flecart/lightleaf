@@ -27,7 +27,8 @@ there is no comment database: they live in git like everything else.
 1. In the editor, **Review → Start review** (optionally with a target venue and a focus). Lightleaf issues a git token
    that works only for this project and expires after an hour, and hands the job to the reviewer.
 2. The reviewer clones the project, reads the main file and every `\input`/`\include`, and splits it into sections.
-3. One call classifies the paper and its sections. Then up to 11 specialised reviewers run in parallel: abstract,
+3. The model is Claude (Anthropic API) or any model behind an OpenAI-compatible API, including self-hosted
+   ones, using structured JSON output in both cases. One call classifies the paper and its sections. Then up to 11 specialised reviewers run in parallel: abstract,
    introduction, related work, methods, results, conclusion, appendix, writing, LaTeX usage, figures and tables,
    and venue fit when a venue is given. Each returns comments anchored to an exact quote from the source.
    Comments whose quote cannot be found are dropped. Similar comments on the same passage are merged, and the most
@@ -108,10 +109,15 @@ Reviewer side:
 | Variable | Default | |
 |---|---|---|
 | `LIGHTLEAF_REVIEWER_SECRET` | – | Required |
-| `ANTHROPIC_API_KEY` | – | Without it the service starts but refuses reviews (removing comments still works) |
+| `LIGHTLEAF_REVIEW_PROVIDER` | auto | `anthropic` or `openai`. Auto: `anthropic` if `ANTHROPIC_API_KEY` is set, else `openai` if `OPENAI_API_KEY` or `OPENAI_BASE_URL` is set |
+| `ANTHROPIC_API_KEY` | – | Anthropic credentials. Without credentials for the selected provider the service starts but refuses reviews (removing comments still works) |
+| `OPENAI_API_KEY` | – | Key for OpenAI or an OpenAI-compatible server (sent as `Authorization: Bearer`) |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible Chat Completions endpoint: OpenRouter, LiteLLM, vLLM, Ollama (`http://localhost:11434/v1`), … A local server needs no key |
+| `LIGHTLEAF_REVIEW_OPENAI_REASONING_EFFORT` | – | Sent as `reasoning_effort` (only for reasoning models) |
+| `LIGHTLEAF_REVIEW_OPENAI_MAX_TOKENS_FIELD` | `max_completion_tokens` | Use `max_tokens` for older compatible servers |
 | `LIGHTLEAF_REVIEWER_BIND` | `127.0.0.1:8090` (`0.0.0.0:8090` in Docker) | Listen address |
-| `LIGHTLEAF_REVIEW_MODEL` | `claude-opus-5-5` | Claude model |
-| `LIGHTLEAF_REVIEW_EFFORT` | `high` | `low` … `max`: depth versus cost |
+| `LIGHTLEAF_REVIEW_MODEL` | `claude-opus-5-5` / `gpt-5.2-chat-latest` | Model, per provider |
+| `LIGHTLEAF_REVIEW_EFFORT` | `high` | Anthropic only: `low` … `max`, depth versus cost |
 | `LIGHTLEAF_REVIEW_MACRO` | `ANG` | Name of the comment command (letters only) |
 | `LIGHTLEAF_REVIEW_MAX_COMMENTS` | `40` | Comments kept per review |
 | `LIGHTLEAF_REVIEW_MAX_JOBS` | `2` | Reviews running at once (others queue) |
@@ -120,8 +126,8 @@ Reviewer side:
 | `LIGHTLEAF_REVIEW_MAX_INPUT_CHARS` | `800000` | Longer documents are refused, never silently truncated |
 | `LIGHTLEAF_REVIEW_DISABLED_AGENTS` | – | Comma list, e.g. `latex_formatting,venue` |
 | `LIGHTLEAF_REVIEW_PROMPTS_DIR` | – | Directory of `<name>.md` files that replace the built-in prompts in `reviewer/prompts/` |
-| `LIGHTLEAF_REVIEW_FALLBACKS` | `true` | Send `fallbacks: "default"` (turn off for API gateways that reject it) |
-| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | API endpoint (e.g. a gateway) |
+| `LIGHTLEAF_REVIEW_FALLBACKS` | `true` | Anthropic only: send `fallbacks: "default"` (turn off for gateways that reject it) |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic API endpoint (e.g. a gateway) |
 | `LIGHTLEAF_REVIEW_WORKDIR` | system temp dir | Where checkouts are made |
 
 **Cost.** The paper is sent once per call but cached: the first call writes the cache, and the parallel reviewers

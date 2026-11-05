@@ -1,15 +1,13 @@
-//! Minimal client for the Claude Messages API (raw HTTP; there is no official Rust SDK).
+//! Anthropic backend: the Claude Messages API (raw HTTP; there is no official Rust SDK).
 //!
 //! Every call asks for structured JSON output (`output_config.format` with a JSON schema), so the
 //! reviewer never parses free text. Retries 429/5xx/529 with `retry-after` or exponential backoff,
 //! and treats refusals and truncated outputs as errors instead of reading partial content.
 
+use crate::llm::{Request, Usage, backoff};
 use anyhow::{Context, anyhow, bail};
 use serde_json::{Value, json};
-use std::{
-    sync::atomic::{AtomicU64, Ordering::Relaxed},
-    time::Duration,
-};
+use std::time::Duration;
 
 const API_VERSION: &str = "2026-10-21";
 /// `fallbacks: "default"`: if a safety classifier declines a request, the API re-runs it on the
@@ -24,49 +22,6 @@ pub struct Claude {
     pub model: String,
     effort: String,
     fallbacks: bool,
-}
-
-/// Token usage accumulated over a job (for the status page and cost tracking).
-#[derive(Default)]
-pub struct Usage {
-    pub input: AtomicU64,
-    pub output: AtomicU64,
-    pub cache_read: AtomicU64,
-    pub cache_write: AtomicU64,
-    pub requests: AtomicU64,
-}
-
-impl Usage {
-    fn add(&self, u: &Value) {
-        let n = |k: &str| u[k].as_u64().unwrap_or(0);
-        self.input.fetch_add(n("input_tokens"), Relaxed);
-        self.output.fetch_add(n("output_tokens"), Relaxed);
-        self.cache_read
-            .fetch_add(n("cache_read_input_tokens"), Relaxed);
-        self.cache_write
-            .fetch_add(n("cache_creation_input_tokens"), Relaxed);
-        self.requests.fetch_add(1, Relaxed);
-    }
-
-    pub fn to_json(&self) -> Value {
-        json!({
-            "inputTokens": self.input.load(Relaxed),
-            "outputTokens": self.output.load(Relaxed),
-            "cacheReadTokens": self.cache_read.load(Relaxed),
-            "cacheWriteTokens": self.cache_write.load(Relaxed),
-            "requests": self.requests.load(Relaxed),
-        })
-    }
-}
-
-/// One request: a system prompt shared by all calls of a job, a large shared document (cached
-/// so parallel agents read it at a fraction of the cost), and the call-specific task.
-pub struct Request<'a> {
-    pub system: &'a str,
-    pub document: &'a str,
-    pub task: &'a str,
-    pub schema: &'a Value,
-    pub max_tokens: u32,
 }
 
 impl Claude {
@@ -151,7 +106,14 @@ impl Claude {
             let value: Value = res.json().await.unwrap_or(Value::Null);
             match status {
                 200 => {
-                    usage.add(&value["usage"]);
+                    let u = &value["usage"];
+                    let n = |k: &str| u[k].as_u64().unwrap_or(0);
+                    usage.add(
+                        n("input_tokens"),
+                        n("output_tokens"),
+                        n("cache_read_input_tokens"),
+                        n("cache_creation_input_tokens"),
+                    );
                     return parse_output(&value);
                 }
                 429 | 500 | 502 | 503 | 504 | 529 if attempt < MAX_ATTEMPTS => {
@@ -165,13 +127,6 @@ impl Claude {
                 }
             }
         }
-    }
-}
-
-fn backoff(attempt: u32, retry_after: Option<u64>) -> Duration {
-    match retry_after {
-        Some(s) => Duration::from_secs(s.min(120)),
-        None => Duration::from_secs(2u64.pow(attempt.min(6))),
     }
 }
 

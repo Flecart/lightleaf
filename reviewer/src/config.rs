@@ -7,7 +7,15 @@ pub struct Config {
     pub bind: String,
     /// Shared secret Lightleaf sends as `Authorization: Bearer …`.
     pub secret: String,
+    /// `anthropic` or `openai` (any OpenAI-compatible Chat Completions API).
+    pub provider: String,
     pub anthropic_api_key: Option<String>,
+    pub openai_api_key: Option<String>,
+    pub openai_base_url: String,
+    /// Explicitly configured OpenAI-compatible endpoint (local servers may need no key).
+    pub openai_base_url_set: bool,
+    pub openai_reasoning_effort: Option<String>,
+    pub openai_max_tokens_field: String,
     pub anthropic_base_url: String,
     pub model: String,
     pub effort: String,
@@ -49,13 +57,41 @@ impl Config {
             !macro_name.is_empty() && macro_name.chars().all(|c| c.is_ascii_alphabetic()),
             "LIGHTLEAF_REVIEW_MACRO must contain only letters (it becomes a LaTeX command name)"
         );
+        let anthropic_api_key = env("ANTHROPIC_API_KEY");
+        let openai_api_key = env("OPENAI_API_KEY");
+        let openai_base = env("OPENAI_BASE_URL");
+        let provider = match env("LIGHTLEAF_REVIEW_PROVIDER").map(|p| p.to_ascii_lowercase()) {
+            Some(p) if p == "anthropic" || p == "openai" => p,
+            Some(p) => anyhow::bail!(
+                "LIGHTLEAF_REVIEW_PROVIDER must be \"anthropic\" or \"openai\", not {p:?}"
+            ),
+            // Without an explicit choice, use whichever provider has credentials.
+            None if anthropic_api_key.is_none()
+                && (openai_api_key.is_some() || openai_base.is_some()) =>
+            {
+                "openai".into()
+            }
+            None => "anthropic".into(),
+        };
+        let default_model = if provider == "openai" {
+            "gpt-5.2-chat-latest"
+        } else {
+            "claude-opus-5-5"
+        };
         Ok(Config {
+            provider,
+            openai_base_url_set: openai_base.is_some(),
+            openai_base_url: openai_base.unwrap_or_else(|| "https://api.openai.com/v1".into()),
+            openai_api_key,
+            openai_reasoning_effort: env("LIGHTLEAF_REVIEW_OPENAI_REASONING_EFFORT"),
+            openai_max_tokens_field: env("LIGHTLEAF_REVIEW_OPENAI_MAX_TOKENS_FIELD")
+                .unwrap_or_else(|| "max_completion_tokens".into()),
             bind: env("LIGHTLEAF_REVIEWER_BIND").unwrap_or_else(|| "127.0.0.1:8090".into()),
             secret,
-            anthropic_api_key: env("ANTHROPIC_API_KEY"),
+            anthropic_api_key,
             anthropic_base_url: env("ANTHROPIC_BASE_URL")
                 .unwrap_or_else(|| "https://api.anthropic.com".into()),
-            model: env("LIGHTLEAF_REVIEW_MODEL").unwrap_or_else(|| "claude-opus-5-5".into()),
+            model: env("LIGHTLEAF_REVIEW_MODEL").unwrap_or_else(|| default_model.into()),
             effort: env("LIGHTLEAF_REVIEW_EFFORT").unwrap_or_else(|| "high".into()),
             fallbacks: !matches!(
                 env("LIGHTLEAF_REVIEW_FALLBACKS").as_deref(),
@@ -80,5 +116,25 @@ impl Config {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| std::env::temp_dir().join("lightleaf-reviewer")),
         })
+    }
+}
+
+impl Config {
+    /// Whether the selected provider has what it needs to run reviews.
+    pub fn llm_configured(&self) -> bool {
+        match self.provider.as_str() {
+            "openai" => self.openai_api_key.is_some() || self.openai_base_url_set,
+            _ => self.anthropic_api_key.is_some(),
+        }
+    }
+
+    /// Message shown when reviews are refused for lack of credentials.
+    pub fn llm_missing_message(&self) -> &'static str {
+        match self.provider.as_str() {
+            "openai" => {
+                "AI review is not configured on the server (OPENAI_API_KEY or OPENAI_BASE_URL is not set)"
+            }
+            _ => "AI review is not configured on the server (ANTHROPIC_API_KEY is not set)",
+        }
     }
 }
