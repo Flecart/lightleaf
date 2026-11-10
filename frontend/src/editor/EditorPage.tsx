@@ -8,6 +8,8 @@ import { FileTree, TreeActions } from './FileTree';
 import { ChatPanel, GitModal, HistoryPanel, LogsPanel, ShareModal } from './Panels';
 import { ReviewEntry } from '../review/ReviewEntry';
 import { outline, OutlineItem } from './lang';
+import { backward, forward, pdfWords, SourceFile } from './typstSync';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 const COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#46a0a0', '#f032e6', '#808000', '#9a6324', '#000075'];
 
@@ -321,7 +323,35 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     } else editorHandle.current?.gotoLine(line);
   };
 
+  // Typst writes no SyncTeX data; its output is matched against the sources by text instead.
+  const typst = !!result?.mainFile.endsWith('.typ');
+  const canSync = !!result?.synctex || typst;
+  const pdfDoc = useRef<PDFDocumentProxy | null>(null);
+
+  const typstSources = async (): Promise<SourceFile[]> => {
+    const open = openPathRef.current;
+    const view = editorHandle.current?.view;
+    const paths = entriesRef.current.filter((e) => e.text && e.path.endsWith('.typ')).map((e) => e.path);
+    return Promise.all(
+      paths.map(async (path) => ({
+        path,
+        text:
+          path === open && view
+            ? view.state.doc.toString()
+            : await fetch(`/api/projects/${pid}/file?path=${encodeURIComponent(path)}`).then((r) => (r.ok ? r.text() : '')),
+      })),
+    );
+  };
+
   const syncToCode = async (page: number, x: number, y: number) => {
+    if (typst) {
+      const doc = pdfDoc.current;
+      if (!doc) return;
+      const [words, files] = await Promise.all([pdfWords(doc), typstSources()]);
+      const r = backward(page, x, y, words, files);
+      if (r) jumpTo(r.file, r.line);
+      return;
+    }
     if (!result?.synctex) return;
     try {
       const r = await get<{ file: string; line: number }>(`/api/projects/${pid}/synctex/pdf?page=${page}&h=${x}&v=${y}`);
@@ -332,7 +362,15 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
   };
 
   const syncToPdf = async () => {
-    if (!openPath || !result?.synctex) return;
+    if (!openPath || !canSync) return;
+    if (typst) {
+      const view = editorHandle.current?.view;
+      const doc = pdfDoc.current;
+      const r = view && doc ? forward(view.state.doc.toString(), view.state.selection.main.head, await pdfWords(doc)) : null;
+      if (r) setHighlight({ ...r, nonce: Date.now() });
+      else toast('No PDF location for this line', 'info');
+      return;
+    }
     try {
       const line = editorHandle.current?.cursorLine() ?? cursorLine;
       const r = await get<any>(`/api/projects/${pid}/synctex/code?file=${encodeURIComponent(openPath)}&line=${line}`);
@@ -480,8 +518,8 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                         <input type="checkbox" checked={autoCompile} onChange={(e) => setAutoCompile(e.currentTarget.checked)} /> Auto
                       </label>
                     </div>
-                    {result?.synctex && openPath && binding && (
-                      <button class="icon-btn" title="Jump to location in PDF (SyncTeX)" onClick={syncToPdf}><Icon name="arrow-right" /></button>
+                    {canSync && openPath && binding && (
+                      <button class="icon-btn" title="Jump to location in PDF" onClick={syncToPdf}><Icon name="arrow-right" /></button>
                     )}
                     <button class={`btn small logs-btn ${showLogs ? 'active' : ''}`} onClick={() => setShowLogs(!showLogs)}>
                       <Icon name="log" /> Logs
@@ -503,7 +541,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                           <Icon name="alert" /> {result.status === 'timeout' ? 'Compilation timed out.' : 'Compilation failed.'} Click to see the logs.
                         </div>
                       )}
-                      <PdfViewer url={pdfUrl} highlight={highlight} onDoubleClick={syncToCode} />
+                      <PdfViewer url={pdfUrl} highlight={highlight} onDoubleClick={syncToCode} onDocument={(d) => (pdfDoc.current = d)} />
                     </>
                   )}
                 </section>

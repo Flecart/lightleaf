@@ -19,6 +19,8 @@ interface Props {
   url: string | null;
   highlight: PdfHighlight | null;
   onDoubleClick?: (page: number, x: number, y: number) => void;
+  /** The loaded document, e.g. for text-based sync of Typst output. */
+  onDocument?: (doc: PDFDocumentProxy | null) => void;
 }
 
 type Zoom = 'fit' | 'page' | number;
@@ -67,6 +69,8 @@ export function PdfViewer(props: Props) {
       cancelled = true;
     };
   }, [props.url]);
+
+  useEffect(() => props.onDocument?.(doc), [doc]);
 
   // Track container size
   useEffect(() => {
