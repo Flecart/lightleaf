@@ -31,6 +31,8 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 - **Error log** — parsed errors, warnings and bad boxes, clickable to jump to the line; inline diagnostics in the editor.
 - **SyncTeX** — double-click the PDF to jump to the source, and jump from the source to the PDF. Typst projects get the
   same two jumps by matching the PDF text against the sources (the Typst CLI writes no SyncTeX data).
+- **AI edit markup** — `\AIadd[tag]{…}`, `\AIdel[tag]{…}`, `\AIdelmoved[tag]{where}{…}` and `\AInote[tag]{…}` are
+  highlighted in the editor with ✓/✗ buttons to accept or reject each one, plus *Accept all* / *Reject all*.
 - **Auto-compile**, LaTeX autocomplete (commands, environments, `\ref` labels, `\cite` keys from your `.bib` files), file outline, browser spell-check.
 - **Git integration**
   - every project *is* a git repository: `git clone http://your-host/git/<project-id>`

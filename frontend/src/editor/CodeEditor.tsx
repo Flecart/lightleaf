@@ -22,6 +22,7 @@ import * as Y from 'yjs';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { DocBinding } from './socket';
 import { languageFor, RefSource } from './lang';
+import { aiMarkup } from './aiMarkupExt';
 import { Issue } from '../api';
 
 export interface EditorHandle {
@@ -98,6 +99,7 @@ export function CodeEditor(props: Props) {
           indentWithTab,
         ]),
         ...languageFor(b.path, propsRef.current.refs),
+        aiMarkup(b.path),
         yCollab(b.text, b.awareness, { undoManager: undo }),
         theme.current.of(themeExt(propsRef.current.dark)),
         font.current.of(fontTheme(propsRef.current.fontSize)),
