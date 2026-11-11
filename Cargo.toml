@@ -22,6 +22,7 @@ axum = { version = "0.8", features = ["ws", "multipart", "macros"] }
 base64 = "0.23.1"
 bcrypt = "0.17"
 brotli = "9.1.1"
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 flate2 = "1.1.10"
 futures-util = "0.3.34"
 hex = "0.4.3"

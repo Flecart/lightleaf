@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS chat (
     body       TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+-- Credentials for a project's external git remote. The token is sealed with the server key
+-- (secrets.rs, context = project id); it never goes into the project's .git/config.
+CREATE TABLE IF NOT EXISTS remote_credentials (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    host       TEXT NOT NULL,
+    username   TEXT NOT NULL,
+    secret     BLOB NOT NULL,
+    set_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_at INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS chat_project ON chat(project_id, id);
 CREATE INDEX IF NOT EXISTS members_user ON members(user_id);
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);

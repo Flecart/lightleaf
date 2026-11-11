@@ -4,14 +4,14 @@
 //!   with a personal access token (like Overleaf's git bridge).
 //! * Web edits are auto-committed whenever a git client fetches, and on explicit snapshots.
 //! * History browsing, diffs and restoring old versions.
-//! * Optional sync with an external remote (GitHub, GitLab, Gitea, ...).
+//! * Sync with an external remote lives in `remote.rs`.
 
 use crate::{
     auth::{User, user_from_basic},
     collab::Room,
     error::{AppError, AppResult},
     state::{Role, SharedState},
-    util::{clean_rel_path, now},
+    util::clean_rel_path,
 };
 use axum::{
     Json,
@@ -22,14 +22,14 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::{io::Read, path::Path as FsPath, process::Stdio, sync::Arc, time::Duration};
+use std::{io::Read, path::Path as FsPath, process::Stdio, sync::Arc};
 use tokio::{io::AsyncWriteExt, process::Command};
 use tokio_util::io::ReaderStream;
 
 const BOT_NAME: &str = "Lightleaf";
 const BOT_EMAIL: &str = "lightleaf@localhost";
 
-fn git_cmd(dir: &FsPath) -> Command {
+pub(crate) fn git_cmd(dir: &FsPath) -> Command {
     let mut c = Command::new("git");
     c.current_dir(dir)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -60,12 +60,6 @@ pub async fn git(dir: &FsPath, args: &[&str]) -> anyhow::Result<String> {
         );
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
-async fn git_timeout(dir: &FsPath, args: &[&str], secs: u64) -> anyhow::Result<String> {
-    tokio::time::timeout(Duration::from_secs(secs), git(dir, args))
-        .await
-        .map_err(|_| anyhow::anyhow!("git {} timed out", args.first().unwrap_or(&"")))?
 }
 
 pub async fn init_repo(dir: &FsPath) -> anyhow::Result<()> {
@@ -131,7 +125,7 @@ pub async fn commit_all(
     Ok(true)
 }
 
-async fn commit_pending(
+pub(crate) async fn commit_pending(
     state: &SharedState,
     id: &str,
     message: &str,
@@ -560,142 +554,4 @@ pub async fn restore_file(
         room.reload_from_disk().await;
     }
     Ok(Json(json!({ "ok": true })))
-}
-
-// ---------------------------------------------------------------------------------------------
-// External remote sync (GitHub / GitLab / Gitea ...)
-// ---------------------------------------------------------------------------------------------
-
-fn mask_url(url: &str) -> String {
-    match (url.find("://"), url.find('@')) {
-        (Some(s), Some(at)) if at > s => format!("{}://***@{}", &url[..s], &url[at + 1..]),
-        _ => url.to_string(),
-    }
-}
-
-pub async fn get_remote(
-    State(state): State<SharedState>,
-    user: User,
-    Path(id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    state.require(&id, user.id, Role::Viewer).await?;
-    let dir = state.cfg.project_dir(&id);
-    let url = git(&dir, &["config", "--get", "remote.origin.url"])
-        .await
-        .unwrap_or_default();
-    let branch = git(&dir, &["config", "--get", "lightleaf.remotebranch"])
-        .await
-        .unwrap_or_default();
-    Ok(Json(json!({
-        "url": if url.trim().is_empty() { None } else { Some(mask_url(url.trim())) },
-        "branch": if branch.trim().is_empty() { "main".to_string() } else { branch.trim().to_string() },
-    })))
-}
-
-#[derive(Deserialize)]
-pub struct RemoteReq {
-    url: String,
-    branch: Option<String>,
-}
-
-pub async fn set_remote(
-    State(state): State<SharedState>,
-    user: User,
-    Path(id): Path<String>,
-    Json(req): Json<RemoteReq>,
-) -> AppResult<Json<serde_json::Value>> {
-    state.require(&id, user.id, Role::Owner).await?;
-    let dir = state.cfg.project_dir(&id);
-    let url = req.url.trim();
-    let _ = git(&dir, &["remote", "remove", "origin"]).await;
-    if !url.is_empty() {
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Err(AppError::bad(
-                "only http(s) remotes are supported, e.g. https://<token>@github.com/user/repo.git",
-            ));
-        }
-        git(&dir, &["remote", "add", "origin", url]).await?;
-    }
-    let branch = req.branch.unwrap_or_else(|| "main".into());
-    if branch.is_empty() || branch.starts_with('-') || branch.contains("..") || branch.contains(' ')
-    {
-        return Err(AppError::bad("invalid branch name"));
-    }
-    git(&dir, &["config", "lightleaf.remotebranch", &branch]).await?;
-    Ok(Json(json!({ "ok": true })))
-}
-
-async fn remote_branch(dir: &FsPath) -> AppResult<String> {
-    let url = git(dir, &["config", "--get", "remote.origin.url"])
-        .await
-        .unwrap_or_default();
-    if url.trim().is_empty() {
-        return Err(AppError::bad("no remote configured"));
-    }
-    let b = git(dir, &["config", "--get", "lightleaf.remotebranch"])
-        .await
-        .unwrap_or_default();
-    Ok(if b.trim().is_empty() {
-        "main".into()
-    } else {
-        b.trim().to_string()
-    })
-}
-
-pub async fn remote_pull(
-    State(state): State<SharedState>,
-    user: User,
-    Path(id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    state.require(&id, user.id, Role::Editor).await?;
-    let dir = state.cfg.project_dir(&id);
-    let branch = remote_branch(&dir).await?;
-    let lock = state.project_lock(&id);
-    let _g = lock.lock().await;
-    commit_pending(&state, &id, "Update from web editor", Some(&user)).await?;
-    let res = git_timeout(
-        &dir,
-        &[
-            "pull",
-            "--no-rebase",
-            "--no-edit",
-            "--allow-unrelated-histories",
-            "origin",
-            &branch,
-        ],
-        120,
-    )
-    .await;
-    if let Err(e) = res {
-        let _ = git(&dir, &["merge", "--abort"]).await;
-        return Err(AppError::conflict(format!(
-            "pull failed (merge conflicts are not resolved automatically): {e}"
-        )));
-    }
-    if let Some(room) = state.hub.get(&id) {
-        room.reload_from_disk().await;
-    }
-    state.touch_project(&id).await;
-    Ok(Json(json!({ "ok": true })))
-}
-
-pub async fn remote_push(
-    State(state): State<SharedState>,
-    user: User,
-    Path(id): Path<String>,
-) -> AppResult<Json<serde_json::Value>> {
-    state.require(&id, user.id, Role::Editor).await?;
-    let dir = state.cfg.project_dir(&id);
-    let branch = remote_branch(&dir).await?;
-    let lock = state.project_lock(&id);
-    let _g = lock.lock().await;
-    commit_pending(&state, &id, "Update from web editor", Some(&user)).await?;
-    git_timeout(
-        &dir,
-        &["push", "origin", &format!("HEAD:refs/heads/{branch}")],
-        120,
-    )
-    .await
-    .map_err(|e| AppError::conflict(format!("push failed (try pulling first): {e}")))?;
-    Ok(Json(json!({ "ok": true, "at": now() })))
 }

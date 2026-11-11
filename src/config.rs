@@ -46,6 +46,12 @@ pub struct Config {
     pub site_name: String,
 }
 
+/// `LIGHTLEAF_SECRET_KEY` (64 hex characters), the key that encrypts stored remote tokens.
+/// Read on its own instead of into `Config`, which derives Debug and must never hold it.
+pub fn secret_key() -> Option<String> {
+    env("LIGHTLEAF_SECRET_KEY")
+}
+
 fn env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.trim().is_empty())
 }

@@ -39,7 +39,8 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
   - pushes go live for everyone who has the project open
   - web edits are committed automatically (attributed to whoever made them, with `Co-authored-by` trailers) whenever someone pulls
   - **History** panel with diffs, labelled versions, and restoring a single file or the whole project
-  - push/pull to an external remote (GitHub, GitLab, Gitea, …)
+  - push, pull or one-click **Sync** with an external remote: Overleaf (paste the project's git URL and an Overleaf git
+    token), GitHub, GitLab, Gitea, … Tokens are stored encrypted, never in the project
 - **Overleaf-compatible zips** — upload a zip from Overleaf's *Download → Source* (or arXiv, or any project folder). The main document is found using Overleaf's rules, and the TeX engine is detected from `% !TEX program`, `latexmkrc` or packages such as `fontspec`. Exports use Overleaf's layout, so they upload straight back to Overleaf.
 - **Sharing** — invite collaborators as editors or viewers.
 - Zip import/export (drag a zip onto the dashboard), project copy, image/PDF previews, personal git access tokens, simple admin panel.
@@ -140,6 +141,7 @@ All configuration is done with environment variables:
 | `LIGHTLEAF_SESSION_IDLE_DAYS` | `14` | Sessions unused for this long are logged out |
 | `LIGHTLEAF_SOURCE_URL` | repository URL | "Source code" link shown in the UI (AGPL §13 — point it at your fork if you modify Lightleaf) |
 | `LIGHTLEAF_SITE_NAME` | `Lightleaf` | Name shown in the UI |
+| `LIGHTLEAF_SECRET_KEY` | `$LIGHTLEAF_DATA/secret.key` | 64 hex characters (`openssl rand -hex 32`) used to encrypt stored remote tokens. Without it, a key file is created on first start with mode 0600; setting it here keeps the key out of the data directory and its backups. Changing it makes stored tokens unreadable (owners must enter them again) |
 | `LIGHTLEAF_METRICS_TOKEN` | – | Allows scraping `/metrics` from other machines with `Authorization: Bearer <token>` (it is always reachable from the server itself) |
 | `LIGHTLEAF_LOG_FORMAT` | `text` | `json` writes one JSON object per log line |
 | `RUST_LOG` | `lightleaf=info` | Log level |
@@ -273,7 +275,7 @@ server.
 - State-changing API requests from other sites are rejected (`Origin` / `Sec-Fetch-Site` checks on top of `SameSite=Lax` cookies). The app is served with a strict Content-Security-Policy, `X-Frame-Options`, `nosniff` and, over HTTPS, HSTS.
 - Uploaded files are served sandboxed (`CSP: sandbox`), and HTML/XML/JS uploads are served as plain text, so a collaborator cannot run scripts in your session by uploading a malicious file.
 - Repositories check out symlinks as plain files (`core.symlinks=false`), and git hooks are disabled.
-- External remotes are limited to `http(s)://`.
+- External remotes are limited to `http(s)://`, and a token is only ever sent over `https://`. Remote tokens (e.g. an Overleaf git token) are never written into the project (where a compiled document could read them): they are stored in the database encrypted with ChaCha20-Poly1305 under `LIGHTLEAF_SECRET_KEY` (or `secret.key`), bound to their project, never returned by the API, and dropped when the remote's host changes. Git gets them through an environment-only credential helper that answers only for that host, with the server user's own credential helpers disabled, and git output is redacted before it is shown or logged. Only the owner can set a remote; editors can sync with it, using the owner's token for that one remote. A URL pasted with `user:token@` is split and the token moved to encrypted storage, including remotes saved by older versions.
 
 ## Roadmap ideas
 

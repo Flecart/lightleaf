@@ -179,27 +179,40 @@ export function HistoryPanel(props: { projectId: string; canWrite: boolean; onCl
 // ---------------------------------------------------------------------------------------------
 // Git
 // ---------------------------------------------------------------------------------------------
+interface RemoteInfo {
+  url: string | null;
+  branch: string | null;
+  token: { username: string; updatedAt: number; setBy: string | null } | null;
+}
+
 export function GitModal(props: { project: Project; onClose: () => void }) {
   const url = `${location.origin}/git/${props.project.id}`;
-  const [remote, setRemote] = useState<{ url: string | null; branch: string } | null>(null);
+  const api = `/api/projects/${props.project.id}/remote`;
+  const [remote, setRemote] = useState<RemoteInfo | null>(null);
   const [newUrl, setNewUrl] = useState('');
-  const [branch, setBranch] = useState('main');
+  const [branch, setBranch] = useState('');
+  const [username, setUsername] = useState('');
+  const [token, setToken] = useState('');
   const [busy, setBusy] = useState('');
 
   const load = () =>
-    get(`/api/projects/${props.project.id}/remote`).then((r) => {
+    get(api).then((r: RemoteInfo) => {
       setRemote(r);
-      setBranch(r.branch);
+      setNewUrl(r.url ?? '');
+      setBranch(r.branch ?? '');
+      setUsername(r.token?.username ?? '');
+      setToken('');
     });
   useEffect(() => {
     load();
   }, []);
 
-  const run = async (what: 'pull' | 'push') => {
+  const run = async (what: 'pull' | 'push' | 'sync') => {
     setBusy(what);
     try {
-      await post(`/api/projects/${props.project.id}/remote/${what}`);
-      toast(what === 'pull' ? 'Pulled changes from remote' : 'Pushed to remote', 'success');
+      const r = await post(`${api}/${what}`);
+      const done = { pull: 'Pulled changes from', push: 'Pushed to', sync: 'Synced with' }[what];
+      toast(`${done} the remote (${r.branch})`, 'success');
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
@@ -207,17 +220,21 @@ export function GitModal(props: { project: Project; onClose: () => void }) {
     }
   };
 
-  const save = async (e: Event) => {
-    e.preventDefault();
+  const save = async (body: object, message: string) => {
     try {
-      await post(`/api/projects/${props.project.id}/remote`, { url: newUrl, branch });
-      setNewUrl('');
-      load();
-      toast('Remote saved', 'success');
+      await post(api, body);
+      await load();
+      toast(message, 'success');
     } catch (err: any) {
       toast(err.message, 'error');
     }
   };
+  const submit = (e: Event) => {
+    e.preventDefault();
+    save({ url: newUrl, branch, username, token }, 'Remote saved');
+  };
+  const overleaf = remote?.url?.includes('git.overleaf.com') || newUrl.includes('git.overleaf.com');
+  const isOwner = props.project.role === 'owner';
 
   return (
     <Modal title="Git" onClose={props.onClose} wide>
@@ -232,25 +249,62 @@ export function GitModal(props: { project: Project; onClose: () => void }) {
       </div>
       <p class="muted small">Web edits are committed automatically when you pull. The default branch is <code>main</code>.</p>
 
-      <h3>Sync with GitHub / GitLab / Gitea</h3>
+      <h3>Sync with Overleaf, GitHub, GitLab or Gitea</h3>
       {remote?.url ? (
-        <div class="row wrap">
-          <code class="grow">{remote.url}</code>
-          <span class="muted">branch <code>{remote.branch}</code></span>
-          <button class="btn small" disabled={!!busy} onClick={() => run('pull')}>{busy === 'pull' ? <Spinner /> : 'Pull'}</button>
-          <button class="btn small primary" disabled={!!busy} onClick={() => run('push')}>{busy === 'push' ? <Spinner /> : 'Push'}</button>
-        </div>
+        <>
+          <div class="row wrap">
+            <code class="grow" style={{ wordBreak: 'break-all', minWidth: 0 }}>{remote.url}</code>
+            <span class="muted">branch <code>{remote.branch ?? 'default'}</code></span>
+            <button class="btn small" disabled={!!busy} onClick={() => run('pull')}>{busy === 'pull' ? <Spinner /> : 'Pull'}</button>
+            <button class="btn small" disabled={!!busy} onClick={() => run('push')}>{busy === 'push' ? <Spinner /> : 'Push'}</button>
+            <button class="btn small primary" disabled={!!busy} title="Pull the remote's changes, then push yours" onClick={() => run('sync')}>
+              {busy === 'sync' ? <Spinner /> : 'Sync'}
+            </button>
+          </div>
+          <p class="muted small">
+            {remote.token
+              ? `Token for user “${remote.token.username}” stored encrypted${remote.token.setBy ? ` (set by ${remote.token.setBy})` : ''}. It is never shown again or written into the project.`
+              : 'No token stored: only public remotes will work.'}
+            {!isOwner && remote.token && ' Pull, push and sync use the owner’s token.'}
+          </p>
+        </>
       ) : (
         <p class="muted">No remote configured.</p>
       )}
-      {props.project.role === 'owner' && (
-        <form class="stack" onSubmit={save}>
+      {isOwner && (
+        <form class="stack" onSubmit={submit} autocomplete="off">
           <div class="row">
-            <input class="grow" placeholder="https://<token>@github.com/you/paper.git" value={newUrl} onInput={(e) => setNewUrl(e.currentTarget.value)} />
-            <input style={{ width: '110px' }} placeholder="branch" value={branch} onInput={(e) => setBranch(e.currentTarget.value)} />
-            <button class="btn">{remote?.url ? 'Change' : 'Set remote'}</button>
+            <input class="grow" placeholder="https://git.overleaf.com/<project id>" value={newUrl} onInput={(e) => setNewUrl(e.currentTarget.value)} />
+            <input style={{ width: '110px' }} placeholder="branch (auto)" value={branch} onInput={(e) => setBranch(e.currentTarget.value)} />
           </div>
-          <p class="muted small">Include an access token in the URL for private repositories. Leave empty and save to remove the remote.</p>
+          <div class="row">
+            <input style={{ width: '140px' }} placeholder={overleaf ? 'git' : 'username (git)'} autocomplete="off" value={username} onInput={(e) => setUsername(e.currentTarget.value)} />
+            <input
+              class="grow"
+              type="password"
+              autocomplete="new-password"
+              placeholder={remote?.token ? 'Token stored; type a new one to replace it' : 'Access token (Overleaf: Account settings → Git integration)'}
+              value={token}
+              onInput={(e) => setToken(e.currentTarget.value)}
+            />
+            <button class="btn">{remote?.url ? 'Save' : 'Set remote'}</button>
+          </div>
+          <div class="row">
+            <p class="muted small grow">
+              Overleaf: copy the URL from the project's Menu → Git; the username is <code>git</code>. Tokens are only sent over https to the remote's
+              host, and are dropped if you change the host.
+            </p>
+            {remote?.token && (
+              <button type="button" class="btn small" onClick={() => save({ url: remote.url, branch, clear_token: true }, 'Token removed')}>
+                Remove token
+              </button>
+            )}
+            {remote?.url && (
+              <button type="button" class="btn small" onClick={() => confirm('Remove the remote and its token?') && save({ url: '' }, 'Remote removed')}>
+                Remove remote
+              </button>
+            )}
+          </div>
         </form>
       )}
     </Modal>

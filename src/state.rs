@@ -31,6 +31,8 @@ pub struct AppState {
     recent_compiles: Mutex<HashMap<String, (std::time::Instant, serde_json::Value)>>,
     /// One async lock per project, serialising disk-level operations (flush, git, compile sync).
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Encrypts stored credentials; set by `main` when serving (see `secrets.rs`).
+    pub secrets: std::sync::OnceLock<crate::secrets::SecretBox>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -78,6 +80,7 @@ impl AppState {
             next_db: AtomicUsize::new(0),
             hub: Hub::default(),
             locks: Mutex::new(HashMap::new()),
+            secrets: std::sync::OnceLock::new(),
         }
     }
 

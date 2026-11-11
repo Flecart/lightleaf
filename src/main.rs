@@ -13,7 +13,9 @@ mod git;
 mod metrics;
 mod overleaf;
 mod projects;
+mod remote;
 mod reviewer;
+mod secrets;
 mod security;
 mod state;
 mod util;
@@ -80,6 +82,11 @@ async fn main() -> anyhow::Result<()> {
     {
         return cli::run(&state, &args).await;
     }
+
+    // Loaded only when serving, so a CLI run as another user never creates a key file the server
+    // cannot read.
+    let secrets = secrets::SecretBox::load(&cfg.data_dir, config::secret_key().as_deref())?;
+    let _ = state.secrets.set(secrets);
 
     if let Some((email, password)) = cfg.bootstrap_admin.clone() {
         auth::bootstrap_admin(&state, &email, &password).await?;
@@ -167,10 +174,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/projects/{id}/remote",
-            get(git::get_remote).post(git::set_remote),
+            get(remote::get_remote).post(remote::set_remote),
         )
-        .route("/projects/{id}/remote/pull", post(git::remote_pull))
-        .route("/projects/{id}/remote/push", post(git::remote_push))
+        .route("/projects/{id}/remote/pull", post(remote::remote_pull))
+        .route("/projects/{id}/remote/push", post(remote::remote_push))
+        .route("/projects/{id}/remote/sync", post(remote::remote_sync))
         .route("/projects/{id}/ws", get(collab::ws_handler))
         // Optional AI review (src/reviewer.rs): 404 when not configured, 503 when unreachable.
         .route(
