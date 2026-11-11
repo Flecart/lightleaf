@@ -343,6 +343,65 @@ pub struct RemoteReq {
     clear_token: bool,
 }
 
+struct RemoteInput {
+    /// The URL without userinfo, as stored in `.git/config`.
+    clean: String,
+    host: String,
+    /// Empty: the remote's default branch.
+    branch: String,
+    /// (username, token) from the token field or from userinfo pasted in the URL.
+    cred: Option<(String, String)>,
+}
+
+/// Validates a remote as entered in the UI. A token given separately wins over one pasted in the
+/// URL; a username given separately wins over the URL's.
+fn nonempty(s: Option<&str>) -> Option<&str> {
+    s.map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn parse_remote_input(
+    url: &str,
+    branch: Option<&str>,
+    username: Option<&str>,
+    token: Option<&str>,
+) -> AppResult<RemoteInput> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(AppError::bad("only http(s) remotes are supported"));
+    }
+    let branch = branch.map(str::trim).unwrap_or("").to_string();
+    if !branch.is_empty() && !valid_branch(&branch) {
+        return Err(AppError::bad("invalid branch name"));
+    }
+    let (clean, info) = split_userinfo(url);
+    let host = url_host(&clean).ok_or_else(|| AppError::bad("invalid remote URL"))?;
+    let mut cred = info.as_deref().and_then(userinfo_credential);
+    if let Some(t) = nonempty(token) {
+        let user = cred
+            .take()
+            .map(|(u, _)| u)
+            .unwrap_or_else(|| DEFAULT_USERNAME.into());
+        cred = Some((user, t.to_string()));
+    }
+    if let (Some((u, _)), Some(name)) = (cred.as_mut(), nonempty(username)) {
+        *u = name.to_string();
+    }
+    if cred.is_some() && !clean.starts_with("https://") {
+        return Err(AppError::bad("a token can only be sent over https"));
+    }
+    if cred
+        .as_ref()
+        .is_some_and(|(u, t)| u.len() > 256 || t.len() > 4096 || t.contains(['\n', '\r']))
+    {
+        return Err(AppError::bad("invalid token"));
+    }
+    Ok(RemoteInput {
+        clean,
+        host,
+        branch,
+        cred,
+    })
+}
+
 pub async fn set_remote(
     State(state): State<SharedState>,
     user: User,
@@ -360,47 +419,18 @@ pub async fn set_remote(
         delete_credential(&state, &id).await?;
         return Ok(Json(json!({ "ok": true })));
     }
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(AppError::bad("only http(s) remotes are supported"));
-    }
-    let branch = req.branch.as_deref().map(str::trim).unwrap_or("");
-    if !branch.is_empty() && !valid_branch(branch) {
-        return Err(AppError::bad("invalid branch name"));
-    }
-    let (clean, info) = split_userinfo(url);
-    let host = url_host(&clean).ok_or_else(|| AppError::bad("invalid remote URL"))?;
-
-    let mut new_cred = info.as_deref().and_then(userinfo_credential);
-    if let Some(t) = req
-        .token
-        .as_deref()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-    {
-        let username = new_cred
-            .take()
-            .map(|(u, _)| u)
-            .unwrap_or_else(|| DEFAULT_USERNAME.into());
-        new_cred = Some((username, t.to_string()));
-    }
-    if let Some((u, _)) = new_cred.as_mut()
-        && let Some(name) = req
-            .username
-            .as_deref()
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-    {
-        *u = name.to_string();
-    }
-    if new_cred.is_some() && !clean.starts_with("https://") {
-        return Err(AppError::bad("a token can only be sent over https"));
-    }
-    if new_cred
-        .as_ref()
-        .is_some_and(|(u, t)| u.len() > 256 || t.len() > 4096 || t.contains(['\n', '\r']))
-    {
-        return Err(AppError::bad("invalid token"));
-    }
+    let RemoteInput {
+        clean,
+        host,
+        branch,
+        cred: new_cred,
+    } = parse_remote_input(
+        url,
+        req.branch.as_deref(),
+        req.username.as_deref(),
+        req.token.as_deref(),
+    )?;
+    let branch = branch.as_str();
 
     let _ = git(&dir, &["remote", "remove", "origin"]).await;
     git(&dir, &["remote", "add", "origin", &clean]).await?;
@@ -443,6 +473,126 @@ pub async fn set_remote(
         }
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct ImportReq {
+    name: Option<String>,
+    url: String,
+    branch: Option<String>,
+    username: Option<String>,
+    token: Option<String>,
+}
+
+/// Creates a project by cloning a remote (e.g. an Overleaf project), so both sides share one
+/// history from the start and Sync is a plain pull and push. Nothing is committed on top: the
+/// project starts exactly at the remote's commit.
+pub async fn import_remote(
+    State(state): State<SharedState>,
+    user: User,
+    Json(req): Json<ImportReq>,
+) -> AppResult<Json<Value>> {
+    let input = parse_remote_input(
+        req.url.trim(),
+        req.branch.as_deref(),
+        req.username.as_deref(),
+        req.token.as_deref(),
+    )?;
+    let cred = input.cred.as_ref().map(|(u, t)| Credential {
+        host: input.host.clone(),
+        username: u.clone(),
+        token: t.clone(),
+    });
+    let name = crate::projects::clean_name(
+        &nonempty(req.name.as_deref()).map_or_else(|| default_name(&input.clean), str::to_string),
+    )?;
+
+    let tmp = state
+        .cfg
+        .data_dir
+        .join(format!("tmp-{}", uuid::Uuid::new_v4().simple()));
+    let cleanup = |e: AppError| {
+        let tmp = tmp.clone();
+        async move {
+            let _ = tokio::fs::remove_dir_all(&tmp).await;
+            Err(e)
+        }
+    };
+    let branch = match clone_into(&tmp, &input, cred.as_ref()).await {
+        Ok(b) => b,
+        Err(e) => return cleanup(e).await,
+    };
+    if let Err(e) = crate::files::check_project_size(&state, crate::files::project_size(&tmp).await)
+    {
+        return cleanup(e).await;
+    }
+    let t = tmp.clone();
+    let det = tokio::task::spawn_blocking(move || crate::overleaf::detect(&t))
+        .await
+        .map_err(anyhow::Error::from)?;
+    let compiler =
+        crate::overleaf::choose_compiler(&det.wanted, &crate::compile::available_compilers());
+    let id = match crate::projects::insert_project(&state, &user, &name, &compiler, &det.main_file)
+        .await
+    {
+        Ok(id) => id,
+        Err(e) => return cleanup(e).await,
+    };
+    tokio::fs::rename(&tmp, state.cfg.project_dir(&id)).await?;
+    if let Some(c) = &cred {
+        store_credential(&state, &id, user.id, c).await?;
+    }
+    Ok(Json(json!({
+        "id": id,
+        "name": name,
+        "mainFile": det.main_file,
+        "compiler": compiler,
+        "branch": branch,
+    })))
+}
+
+/// Fetches the remote's branch into a fresh repository at `dir` and checks it out as `main`
+/// (the branch Lightleaf serves), remembering the remote branch for later syncs.
+async fn clone_into(
+    dir: &FsPath,
+    input: &RemoteInput,
+    cred: Option<&Credential>,
+) -> AppResult<String> {
+    crate::git::init_repo(dir).await?;
+    git(dir, &["remote", "add", "origin", &input.clean]).await?;
+    let branch = if input.branch.is_empty() {
+        branch(dir, cred).await?
+    } else {
+        input.branch.clone()
+    };
+    git_remote(
+        dir,
+        &[
+            "fetch",
+            "--no-tags",
+            "origin",
+            &format!("refs/heads/{branch}"),
+        ],
+        cred,
+    )
+    .await?;
+    git(dir, &["checkout", "-q", "-B", "main", "FETCH_HEAD"]).await?;
+    git(dir, &["config", "lightleaf.remotebranch", &branch]).await?;
+    Ok(branch)
+}
+
+/// "Overleaf project" for Overleaf (whose URLs end in an opaque id), else the repository name.
+fn default_name(url: &str) -> String {
+    if url_host(url).is_some_and(|h| h == "git.overleaf.com") {
+        return "Overleaf project".into();
+    }
+    url.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .map(|s| s.trim_end_matches(".git"))
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Imported project")
+        .to_string()
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -598,6 +748,11 @@ mod tests {
     #[test]
     fn branch_names() {
         assert!(valid_branch("master") && valid_branch("feat/x-1"));
+        assert_eq!(
+            default_name("https://git.overleaf.com/6a34"),
+            "Overleaf project"
+        );
+        assert_eq!(default_name("https://github.com/me/paper.git"), "paper");
         assert!(
             !valid_branch("-x")
                 && !valid_branch("a..b")

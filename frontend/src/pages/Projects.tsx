@@ -23,6 +23,7 @@ export function ProjectsPage(props: { user: User; config: PublicConfig; onLogout
   const [creating, setCreating] = useState<null | 'latex' | 'typst' | 'blank'>(null);
   const [importing, setImporting] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   const load = () => get<Project[]>('/api/projects').then(setProjects);
@@ -113,6 +114,7 @@ export function ProjectsPage(props: { user: User; config: PublicConfig; onLogout
                 <button onClick={() => { setCreating('typst'); setNewOpen(false); }}>Typst project</button>
                 <hr />
                 <button onClick={() => { setUploadOpen(true); setNewOpen(false); }}>Upload project (.zip)</button>
+                <button onClick={() => { setGitOpen(true); setNewOpen(false); }}>Import from Overleaf / git</button>
               </div>
             )}
           </div>
@@ -178,6 +180,7 @@ export function ProjectsPage(props: { user: User; config: PublicConfig; onLogout
       </div>
       {uploadOpen && <UploadModal busy={importing} onFile={importZip} onClose={() => setUploadOpen(false)} />}
       {dragging && <div class="drop-overlay">Drop a .zip to import it as a new project</div>}
+      {gitOpen && <ImportGitModal onClose={() => setGitOpen(false)} />}
       {creating && <NewProjectModal template={creating} onClose={() => setCreating(null)} />}
     </div>
   );
@@ -236,6 +239,57 @@ function UploadModal(props: { busy: boolean; onFile: (f: File) => void; onClose:
         </span>
         <input ref={input} type="file" accept=".zip,application/zip" hidden onChange={(e) => e.currentTarget.files?.[0] && props.onFile(e.currentTarget.files[0])} />
       </div>
+    </Modal>
+  );
+}
+
+function ImportGitModal(props: { onClose: () => void }) {
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [username, setUsername] = useState('');
+  const [token, setToken] = useState('');
+  const [branch, setBranch] = useState('');
+  const [busy, setBusy] = useState(false);
+  const overleaf = url.includes('git.overleaf.com');
+  const submit = async (e: Event) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await post<{ id: string; mainFile: string; compiler: string; branch: string }>('/api/projects/import/git', {
+        name,
+        url: url.trim(),
+        username,
+        token,
+        branch,
+      });
+      toast(`Imported branch ${r.branch} · main document ${r.mainFile} · ${r.compiler}`, 'success');
+      location.hash = `#/project/${r.id}`;
+    } catch (err: any) {
+      toast(err.message, 'error');
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Import from Overleaf or git" onClose={props.onClose}>
+      <form onSubmit={submit} class="stack" autocomplete="off">
+        <p class="muted small">
+          Clones the repository, so this project and the remote share one history and <strong>Git → Sync</strong> just pulls and pushes. For
+          Overleaf, copy the URL from the project's Menu → Git and create a token under Account settings → Git integration.
+        </p>
+        <input autoFocus required placeholder="https://git.overleaf.com/<project id>" value={url} onInput={(e) => setUrl(e.currentTarget.value)} />
+        <div class="row">
+          <input style={{ width: '140px' }} placeholder={overleaf ? 'git' : 'username (git)'} value={username} onInput={(e) => setUsername(e.currentTarget.value)} />
+          <input class="grow" type="password" autocomplete="new-password" placeholder="Access token (stored encrypted)" value={token} onInput={(e) => setToken(e.currentTarget.value)} />
+        </div>
+        <div class="row">
+          <input class="grow" placeholder={overleaf ? 'Project name (default: Overleaf project)' : 'Project name (default: repository name)'} value={name} onInput={(e) => setName(e.currentTarget.value)} />
+          <input style={{ width: '120px' }} placeholder="branch (auto)" value={branch} onInput={(e) => setBranch(e.currentTarget.value)} />
+        </div>
+        <div class="row end">
+          <button type="button" class="btn" onClick={props.onClose}>Cancel</button>
+          <button class="btn primary" disabled={busy || !url.trim()}>{busy ? 'Cloning…' : 'Import'}</button>
+        </div>
+      </form>
     </Modal>
   );
 }

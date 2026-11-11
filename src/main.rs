@@ -134,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/projects", get(projects::list).post(projects::create))
         .route("/projects/import", post(projects::import_zip))
+        .route("/projects/import/git", post(remote::import_remote))
         .route(
             "/projects/{id}",
             get(projects::get)

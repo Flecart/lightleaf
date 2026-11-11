@@ -91,7 +91,7 @@ pub async fn list(State(state): State<SharedState>, user: User) -> AppResult<Jso
     Ok(Json(json!(rows)))
 }
 
-async fn insert_project(
+pub(crate) async fn insert_project(
     state: &SharedState,
     user: &User,
     name: &str,
@@ -138,7 +138,7 @@ async fn insert_project(
     Ok(id)
 }
 
-fn clean_name(name: &str) -> AppResult<String> {
+pub(crate) fn clean_name(name: &str) -> AppResult<String> {
     let n = name.trim();
     if n.is_empty() || n.len() > 150 {
         return Err(AppError::bad("project name must be 1-150 characters"));
