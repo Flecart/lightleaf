@@ -243,39 +243,44 @@ fn main_dir(main: &str) -> &str {
     main.rsplit_once('/').map_or("", |(d, _)| d)
 }
 
-/// File lookup for TeX when the main file is in a subfolder, as on Overleaf and as folio
-/// does it: TeX runs in the project root, so root-relative paths resolve, and the main
-/// file's directory comes next on the search paths (its class files, `\input`s and
-/// `.bib`s). The trailing `:` keeps the TeX Live defaults.
-fn tex_search_env(main: &str) -> Vec<(&'static str, String)> {
+/// Like Overleaf (`latexmk -cd`), TeX runs in the main document's folder, so the paths a
+/// document uses are relative to it, and its outputs (`<stem>.pdf`, `.log`, `.synctex.gz`,
+/// `\include` `.aux` files) land there. The project root follows on the search paths, so
+/// paths written from the root keep working as they did before. An explicit `../` is still
+/// refused (`openin_any=p`), since it could read outside the project.
+/// Returns the folder to run in, the main file's name there, and the environment.
+fn tex_workdir(dir: &FsPath, main: &str) -> (PathBuf, String, Vec<(&'static str, String)>) {
     let d = main_dir(main);
     if d.is_empty() {
-        return Vec::new();
+        return (dir.to_path_buf(), main.to_string(), Vec::new());
     }
-    let path = format!(".:{d}:");
-    ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS"]
+    let path = format!(".:{}:", to_root(d));
+    let env = ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS"]
         .into_iter()
         .map(|k| (k, path.clone()))
-        .collect()
+        .collect();
+    (dir.join(d), main[d.len() + 1..].to_string(), env)
 }
 
-/// pdflatex writes its outputs to the current directory; with a main file in a
-/// subfolder they must land next to it (`<stem>.pdf`, `.log`, `.synctex.gz`). TeX also
-/// writes the `.aux` of every `\include`d file at that file's path below the output
-/// directory, so the project's directories are mirrored there.
-fn tex_output_dir(dir: &FsPath, main: &str) -> Option<String> {
-    let d = main_dir(main);
-    if d.is_empty() {
-        return None;
-    }
-    let out = dir.join(d);
-    let prefix = format!("{d}/");
-    for (rel, _, meta) in walk(dir) {
-        if meta.is_dir() && rel != d && !rel.starts_with(&prefix) {
-            let _ = std::fs::create_dir_all(out.join(&rel));
+/// The project root seen from the project folder `d`: `..` once per component.
+fn to_root(d: &str) -> String {
+    d.split('/').map(|_| "..").collect::<Vec<_>>().join("/")
+}
+
+/// A path that TeX or SyncTeX reports relative to `base` (a project folder) as a project
+/// path, resolving `.` and `..`. `None` if it leaves the project.
+fn project_path(base: &str, p: &str) -> Option<String> {
+    let mut parts: Vec<&str> = base.split('/').filter(|s| !s.is_empty()).collect();
+    for seg in p.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            seg => parts.push(seg),
         }
     }
-    Some(d.to_string())
+    Some(parts.join("/"))
 }
 
 async fn compile_pdflatex(
@@ -284,10 +289,10 @@ async fn compile_pdflatex(
     main: &str,
     deadline: Instant,
 ) -> std::io::Result<(String, bool)> {
+    let (dir, main, env) = tex_workdir(dir, main);
+    let (dir, main) = (dir.as_path(), main.as_str());
     let s = stem(main);
     let mut transcript = String::new();
-    let env = tex_search_env(main);
-    let outdir = tex_output_dir(dir, main);
     if tools().latexmk {
         let mut argv = [
             "latexmk",
@@ -299,9 +304,6 @@ async fn compile_pdflatex(
         ]
         .map(String::from)
         .to_vec();
-        if let Some(o) = &outdir {
-            argv.push(format!("-outdir={o}"));
-        }
         argv.push(main.to_string());
         let r = run_env(state, dir, &argv, &env, deadline).await?;
         let log = std::fs::read_to_string(dir.join(format!("{s}.log")))
@@ -317,9 +319,6 @@ async fn compile_pdflatex(
     ]
     .map(String::from)
     .to_vec();
-    if let Some(o) = &outdir {
-        tex.push(format!("-output-directory={o}"));
-    }
     tex.push(main.to_string());
     let mut bib_done = false;
     for pass in 0..4 {
@@ -721,6 +720,12 @@ pub async fn compile(
     } else {
         let (log, t) = compile_pdflatex(&state, &build, &main, deadline).await?;
         let mut issues = parse_latex_log(&log);
+        // TeX ran in the main file's folder (tex_workdir) and names files from there.
+        for is in &mut issues {
+            if let Some(f) = is.file.take() {
+                is.file = Some(project_path(main_dir(&main), &f).unwrap_or(f));
+            }
+        }
         issues.insert(0, pdflatex_warning());
         (log, t, issues)
     };
@@ -791,7 +796,8 @@ pub async fn output(
         .into_response())
 }
 
-async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf)> {
+/// The PDF shown, the build folder, and the document it was compiled from.
+async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf, String)> {
     if !tools().synctex {
         return Err(AppError::bad("synctex is not installed"));
     }
@@ -805,7 +811,7 @@ async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf)
         .await?;
     let build = std::fs::canonicalize(state.cfg.project_build_dir(id))
         .map_err(|_| AppError::not_found())?;
-    Ok((build.join(format!("{}.pdf", stem(&main))), build))
+    Ok((build.join(format!("{}.pdf", stem(&main))), build, main))
 }
 
 #[derive(Deserialize)]
@@ -823,7 +829,7 @@ pub async fn synctex_from_pdf(
     Query(q): Query<PdfPos>,
 ) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
-    let (pdf, build) = main_pdf(&state, &id).await?;
+    let (pdf, build, _) = main_pdf(&state, &id).await?;
     let out = Command::new("synctex")
         .args([
             "edit",
@@ -843,7 +849,8 @@ pub async fn synctex_from_pdf(
                 .strip_prefix(&*build.to_string_lossy())
                 .unwrap_or(f)
                 .trim_start_matches('/');
-            file = Some(rel.trim_start_matches("./").replace("/./", "/"));
+            // `main/./part.tex`, or `main/../root.tex` for a file found on the root fallback.
+            file = Some(project_path("", rel).unwrap_or_else(|| rel.to_string()));
         } else if let Some(n) = l.strip_prefix("Line:") {
             line = n.trim().parse::<u32>().ok();
             break;
@@ -871,20 +878,35 @@ pub async fn synctex_from_code(
     Query(q): Query<CodePos>,
 ) -> AppResult<Json<serde_json::Value>> {
     state.require(&id, user.id, Role::Viewer).await?;
-    let (pdf, build) = main_pdf(&state, &id).await?;
+    let (pdf, build, main) = main_pdf(&state, &id).await?;
     let rel = clean_rel_path(&q.file)?;
-    let input = build.join(&rel);
-    let out = Command::new("synctex")
-        .args([
-            "view",
-            "-i",
-            &format!("{}:{}:{}", q.line, q.column, input.display()),
-            "-o",
-            &pdf.to_string_lossy(),
-        ])
-        .current_dir(&build)
-        .output()
-        .await?;
+    // SyncTeX keeps the name TeX opened: `<main folder>/x.tex`, or `<main folder>/../x.tex` for a
+    // file found on the project-root fallback (see tex_workdir). Try both.
+    let d = main_dir(&main);
+    let mut inputs = vec![build.join(&rel)];
+    if !d.is_empty() {
+        inputs.push(build.join(d).join(to_root(d)).join(&rel));
+    }
+    let mut out = None;
+    for input in inputs {
+        let o = Command::new("synctex")
+            .args([
+                "view",
+                "-i",
+                &format!("{}:{}:{}", q.line, q.column, input.display()),
+                "-o",
+                &pdf.to_string_lossy(),
+            ])
+            .current_dir(&build)
+            .output()
+            .await?;
+        let found = String::from_utf8_lossy(&o.stdout).contains("Page:");
+        out = Some(o);
+        if found {
+            break;
+        }
+    }
+    let out = out.expect("at least one candidate");
     let text = String::from_utf8_lossy(&out.stdout);
     let mut res = serde_json::Map::new();
     for l in text.lines() {
@@ -917,26 +939,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tex_finds_root_and_main_dir_files() {
+    fn tex_runs_in_the_main_folder_like_overleaf() {
         assert_eq!(main_dir("main.tex"), "");
         assert_eq!(main_dir("paper/neurips/main.tex"), "paper/neurips");
-        assert!(tex_search_env("main.tex").is_empty());
-        let env = tex_search_env("neurips26/main.tex");
+        let root = FsPath::new("/p");
+        let (cwd, file, env) = tex_workdir(root, "main.tex");
+        assert_eq!((cwd.as_path(), file.as_str()), (root, "main.tex"));
+        assert!(env.is_empty());
+        let (cwd, file, env) = tex_workdir(root, "paper/neurips/main.tex");
+        assert_eq!(cwd, FsPath::new("/p/paper/neurips"));
+        assert_eq!(file, "main.tex");
         assert_eq!(env.len(), 3);
-        assert!(env.iter().all(|(_, v)| v == ".:neurips26:"), "{env:?}");
+        assert!(env.iter().all(|(_, v)| v == ".:../..:"), "{env:?}");
+    }
 
-        let dir = std::env::temp_dir().join(format!("ll-outdir-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("neurips26")).unwrap();
-        std::fs::create_dir_all(dir.join("body/figs")).unwrap();
-        assert_eq!(tex_output_dir(&dir, "main.tex"), None);
+    #[test]
+    fn maps_tex_paths_back_to_the_project() {
         assert_eq!(
-            tex_output_dir(&dir, "neurips26/main.tex").as_deref(),
-            Some("neurips26")
+            project_path("archive", "./doc.tex").as_deref(),
+            Some("archive/doc.tex")
         );
-        assert!(dir.join("neurips26/body/figs").is_dir());
-        assert!(!dir.join("neurips26/neurips26").exists());
-        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            project_path("archive", "../shared.tex").as_deref(),
+            Some("shared.tex")
+        );
+        assert_eq!(
+            project_path("", "archive/./x.tex").as_deref(),
+            Some("archive/x.tex")
+        );
+        assert_eq!(
+            project_path("", "a/b/../../c.tex").as_deref(),
+            Some("c.tex")
+        );
+        assert_eq!(project_path("a", "../../etc/passwd"), None);
     }
 
     #[test]
