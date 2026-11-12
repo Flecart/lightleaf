@@ -376,9 +376,12 @@ fn parse_remote_input(
     let host = url_host(&clean).ok_or_else(|| AppError::bad("invalid remote URL"))?;
     let mut cred = info.as_deref().and_then(userinfo_credential);
     if let Some(t) = nonempty(token) {
-        let user = cred
-            .take()
-            .map(|(u, _)| u)
+        // With a separate token, the URL's userinfo can only be a username (`git@host` as
+        // Overleaf shows it), never the `token@host` shorthand.
+        let user = info
+            .as_deref()
+            .map(|i| percent_decode(i.split_once(':').map_or(i, |(u, _)| u)))
+            .filter(|u| !u.is_empty())
             .unwrap_or_else(|| DEFAULT_USERNAME.into());
         cred = Some((user, t.to_string()));
     }
@@ -725,6 +728,32 @@ mod tests {
             Some(("a@b".into(), "p/q".into()))
         );
         assert_eq!(userinfo_credential(""), None);
+    }
+
+    #[test]
+    fn separate_token_keeps_url_username() {
+        let cred = |url, user, token| parse_remote_input(url, None, user, token).unwrap().cred;
+        let olp = Some("olp_x");
+        let git = Some(("git".to_string(), "olp_x".to_string()));
+        assert_eq!(cred("https://git@git.overleaf.com/6a34", None, olp), git);
+        assert_eq!(
+            cred("https://git@git.overleaf.com/6a34", Some(""), olp),
+            git
+        );
+        assert_eq!(
+            cred("https://git:old@git.overleaf.com/6a34", None, olp),
+            git
+        );
+        assert_eq!(cred("https://git.overleaf.com/6a34", None, olp), git);
+        assert_eq!(
+            cred("https://git@git.overleaf.com/6a34", Some("me"), olp),
+            Some(("me".into(), "olp_x".into()))
+        );
+        // Without a separate token, a bare userinfo is still a GitHub-style token.
+        assert_eq!(
+            cred("https://ghp_x@github.com/a/b", None, None),
+            Some(("x-access-token".into(), "ghp_x".into()))
+        );
     }
 
     #[test]
