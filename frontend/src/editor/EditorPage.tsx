@@ -100,7 +100,8 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     compilingRef.current = true;
     setCompiling(true);
     try {
-      const r = await post<CompileResult>(`/api/projects/${pid}/compile`, {});
+      // The server compiles the open file if it is a standalone document, else the main file.
+      const r = await post<CompileResult>(`/api/projects/${pid}/compile`, { focus: openPathRef.current ?? undefined });
       setResult(r);
       if (r.pdf) setPdfUrl(r.pdf);
       if (r.status === 'failure' || r.status === 'timeout') setShowLogs(true);
@@ -130,7 +131,13 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     if (!sock) return;
     const prev = openPathRef.current;
     if (prev && prev !== path) sock.close(prev);
+    openPathRef.current = path;
     setOpenPath(path);
+    // Another source file may be another document: refresh the preview.
+    if (prev && path && prev !== path && autoRef.current && /\.(typ|tex)$/.test(path)) {
+      clearTimeout(autoTimer.current);
+      autoTimer.current = window.setTimeout(() => compile(), 300);
+    }
     localStorage.setItem(`ll-open-${pid}`, path ?? '');
     if (!path || !isText(path)) {
       setBinding(null);
@@ -315,7 +322,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
 
   // ---- synctex -------------------------------------------------------------------------------
   const jumpTo = (file: string | null, line: number) => {
-    const target = file ?? project?.mainFile ?? null;
+    const target = file ?? result?.mainFile ?? project?.mainFile ?? null;
     if (!target) return;
     if (target !== openPathRef.current) {
       openFile(target);
@@ -527,6 +534,9 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                       {warnings > 0 && <span class="count warn">{warnings}</span>}
                     </button>
                     <div class="spacer" />
+                    {result && project && result.mainFile !== project.mainFile && (
+                      <span class="muted small hide-sm" title="Compiled the open document instead of the main one">{result.mainFile}</span>
+                    )}
                     {result && <span class="muted small hide-sm">{(result.durationMs / 1000).toFixed(1)}s</span>}
                     {pdfUrl && (
                       <a class="icon-btn" title="Download PDF" href={`/api/projects/${pid}/output/output.pdf`} download={`${project.name}.pdf`}><Icon name="download" /></a>

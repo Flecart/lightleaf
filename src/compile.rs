@@ -243,6 +243,123 @@ fn main_dir(main: &str) -> &str {
     main.rsplit_once('/').map_or("", |(d, _)| d)
 }
 
+/// Picks the document to compile: the file focused in the editor when it can be compiled on
+/// its own, otherwise the project's main file. A Typst file is a document unless another
+/// `.typ` file `#import`s or `#include`s it (chapters and libraries are not); a LaTeX file is
+/// one when it has a `\documentclass`. The extension must match the project's compiler.
+fn resolve_document(src: &FsPath, compiler: &str, main: String, focus: Option<&str>) -> String {
+    let Some(focus) = focus.filter(|f| *f != main) else {
+        return main;
+    };
+    let Ok(text) = std::fs::read_to_string(src.join(focus)) else {
+        return main;
+    };
+    let standalone = if compiler == "typst" {
+        focus.ends_with(".typ") && !typst_imported(src, focus)
+    } else {
+        focus.ends_with(".tex") && has_documentclass(&text)
+    };
+    if standalone { focus.to_string() } else { main }
+}
+
+fn has_documentclass(tex: &str) -> bool {
+    tex.lines().any(|l| {
+        let code = l.split('%').next().unwrap_or("");
+        code.contains("\\documentclass")
+    })
+}
+
+/// Whether any other `.typ` file in the project imports or includes `target`.
+fn typst_imported(src: &FsPath, target: &str) -> bool {
+    walk(src).into_iter().any(|(rel, full, meta)| {
+        rel != target
+            && rel.ends_with(".typ")
+            && meta.is_file()
+            && meta.len() <= 4 << 20
+            && std::fs::read_to_string(&full).is_ok_and(|t| {
+                typst_deps(&t)
+                    .iter()
+                    .any(|d| resolve_typst(&rel, d).as_deref() == Some(target))
+            })
+    })
+}
+
+/// The string paths after `import` / `include` keywords, ignoring comments and `@preview`
+/// packages.
+fn typst_deps(text: &str) -> Vec<&str> {
+    let b = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
+    while i < b.len() {
+        match b[i] {
+            b'/' if b.get(i + 1) == Some(&b'/') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                i = text[i + 2..].find("*/").map_or(b.len(), |e| i + 2 + e + 2);
+            }
+            b'"' => {
+                // Skip string literals so `//` inside them is not taken for a comment.
+                i += 1;
+                while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
+                    i += if b[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            c if ident(c) => {
+                let start = i;
+                while i < b.len() && ident(b[i]) {
+                    i += 1;
+                }
+                let word = &text[start..i];
+                if word != "import" && word != "include" {
+                    continue;
+                }
+                let mut j = i;
+                while j < b.len() && (b[j] == b' ' || b[j] == b'\t') {
+                    j += 1;
+                }
+                if b.get(j) != Some(&b'"') {
+                    continue;
+                }
+                if let Some(end) = text[j + 1..].find(['"', '\n']) {
+                    let path = &text[j + 1..j + 1 + end];
+                    if !path.starts_with('@') {
+                        out.push(path);
+                    }
+                    i = j + 1 + end + 1;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// Resolves a Typst import path written in `from` to a project-relative path: absolute paths
+/// start at the project root, the rest at the importing file's directory.
+fn resolve_typst(from: &str, path: &str) -> Option<String> {
+    let base = if path.starts_with('/') {
+        ""
+    } else {
+        main_dir(from)
+    };
+    let mut parts: Vec<&str> = base.split('/').filter(|s| !s.is_empty()).collect();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
 /// Like Overleaf (`latexmk -cd`), TeX runs in the main document's folder, so the paths a
 /// document uses are relative to it, and its outputs (`<stem>.pdf`, `.log`, `.synctex.gz`,
 /// `\include` `.aux` files) land there. The project root follows on the search paths, so
@@ -604,6 +721,10 @@ fn parse_typst(output: &str) -> Vec<Issue> {
 pub struct CompileReq {
     #[serde(default)]
     pub main_file: Option<String>,
+    /// The file open in the editor; compiled instead of the main file when it is a
+    /// standalone document (see [`resolve_document`]).
+    #[serde(default)]
+    pub focus: Option<String>,
 }
 
 pub async fn compile(
@@ -623,9 +744,14 @@ pub async fn compile(
             )
         })
         .await?;
-    let main = match body.and_then(|b| b.0.main_file) {
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let main = match req.main_file {
         Some(m) if !m.is_empty() => clean_rel_path(&m)?,
         _ => clean_rel_path(&main_file)?,
+    };
+    let focus = match req.focus {
+        Some(f) if !f.is_empty() => Some(clean_rel_path(&f)?),
+        _ => None,
     };
     if let Some(msg) = incompatible_engine(&compiler) {
         return Err(AppError::bad(msg));
@@ -637,6 +763,12 @@ pub async fn compile(
     }
     let src = state.cfg.project_dir(&id);
     let build = state.cfg.project_build_dir(&id);
+    let main = {
+        let (s, c) = (src.clone(), compiler.clone());
+        tokio::task::spawn_blocking(move || resolve_document(&s, &c, main, focus.as_deref()))
+            .await
+            .map_err(anyhow::Error::from)?
+    };
     if !src.join(&main).is_file() {
         return Err(AppError::bad(format!(
             "main file '{main}' does not exist — set it in the project menu"
@@ -733,6 +865,8 @@ pub async fn compile(
     let ok = tokio::fs::metadata(&pdf).await.is_ok();
     if ok {
         tokio::fs::copy(&pdf, build.join(".output.pdf")).await?;
+        // SyncTeX lookups go to the document shown, which need not be the main file.
+        tokio::fs::write(build.join(".output.main"), &main).await?;
     }
     let mut full_log = log;
     if timed_out {
@@ -801,16 +935,21 @@ async fn main_pdf(state: &SharedState, id: &str) -> AppResult<(PathBuf, PathBuf,
     if !tools().synctex {
         return Err(AppError::bad("synctex is not installed"));
     }
-    let pid = id.to_string();
-    let main: String = state
-        .db(move |c| {
-            c.query_row("SELECT main_file FROM projects WHERE id = ?1", [pid], |r| {
-                r.get(0)
-            })
-        })
-        .await?;
     let build = std::fs::canonicalize(state.cfg.project_build_dir(id))
         .map_err(|_| AppError::not_found())?;
+    let main = match tokio::fs::read_to_string(build.join(".output.main")).await {
+        Ok(m) => clean_rel_path(&m)?,
+        Err(_) => {
+            let pid = id.to_string();
+            state
+                .db(move |c| {
+                    c.query_row("SELECT main_file FROM projects WHERE id = ?1", [pid], |r| {
+                        r.get(0)
+                    })
+                })
+                .await?
+        }
+    };
     Ok((build.join(format!("{}.pdf", stem(&main))), build, main))
 }
 
@@ -972,6 +1111,50 @@ mod tests {
             Some("c.tex")
         );
         assert_eq!(project_path("a", "../../etc/passwd"), None);
+    }
+
+    #[test]
+    fn finds_typst_imports() {
+        let t = "#import \"lib/a.typ\": x\n#include \"ch1.typ\"\n// #include \"old.typ\"\n\
+                 /* #include \"gone.typ\" */ #link(\"https://x//y\")\n#import \"@preview/cetz:0.3.0\"\n\
+                 #{ include \"ch2.typ\" }\n#let imported = 1";
+        assert_eq!(typst_deps(t), ["lib/a.typ", "ch1.typ", "ch2.typ"]);
+        assert_eq!(
+            resolve_typst("doc/main.typ", "ch1.typ").as_deref(),
+            Some("doc/ch1.typ")
+        );
+        assert_eq!(
+            resolve_typst("doc/main.typ", "/ch1.typ").as_deref(),
+            Some("ch1.typ")
+        );
+        assert_eq!(
+            resolve_typst("doc/main.typ", "../x.typ").as_deref(),
+            Some("x.typ")
+        );
+        assert_eq!(resolve_typst("main.typ", "../x.typ"), None);
+    }
+
+    #[test]
+    fn compiles_focused_document_or_falls_back() {
+        let dir = std::env::temp_dir().join(format!("ll-resolve-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("ch")).unwrap();
+        let w = |p: &str, t: &str| std::fs::write(dir.join(p), t).unwrap();
+        w("main.typ", "#include \"ch/one.typ\"");
+        w("ch/one.typ", "#import \"../lib.typ\": *\n= One");
+        w("lib.typ", "#let x = 1");
+        w("slides.typ", "= Slides");
+        w("main.tex", "\\documentclass{article}");
+        w("part.tex", "% \\documentclass{article}\n\\section{A}");
+        let r = |c: &str, f: &str| resolve_document(&dir, c, "main".into(), Some(f));
+        assert_eq!(r("typst", "slides.typ"), "slides.typ");
+        assert_eq!(r("typst", "ch/one.typ"), "main");
+        assert_eq!(r("typst", "lib.typ"), "main");
+        assert_eq!(r("typst", "main.tex"), "main");
+        assert_eq!(r("typst", "missing.typ"), "main");
+        assert_eq!(r("pdflatex", "main.tex"), "main.tex");
+        assert_eq!(r("folio", "part.tex"), "main");
+        assert_eq!(r("pdflatex", "slides.typ"), "main");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
