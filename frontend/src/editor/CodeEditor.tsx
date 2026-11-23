@@ -23,6 +23,7 @@ import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { DocBinding } from './socket';
 import { languageFor, RefSource } from './lang';
 import { aiMarkup } from './aiMarkupExt';
+import { formatKeymap } from './formatting';
 import { Issue } from '../api';
 
 export interface EditorHandle {
@@ -90,6 +91,7 @@ export function CodeEditor(props: Props) {
         keymap.of([
           { key: 'Mod-s', run: () => (propsRef.current.onCompile(), true), preventDefault: true },
           { key: 'Mod-Enter', run: () => (propsRef.current.onCompile(), true) },
+          ...formatKeymap(b.path),
           ...closeBracketsKeymap,
           ...yUndoManagerKeymap,
           ...defaultKeymap,
