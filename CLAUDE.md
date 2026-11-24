@@ -9,8 +9,8 @@ Preact/CodeMirror frontend. AGPL-3.0-only. User-facing docs are in `README.md`; 
 ```bash
 (cd frontend && npm install && npm run build)   # REQUIRED before cargo build: rust-embed embeds frontend/dist
 cargo build                                     # debug; use --release for any performance measurement
-cargo test
-cargo fmt --check && cargo clippy --all-targets # CI requires both clean (zero warnings)
+cargo test --workspace
+cargo fmt --check && cargo xtask lint            # CI: mandatory tier must pass; pedantic etc. only warn
 (cd frontend && npx tsc --noEmit)               # frontend type-check (also part of `npm run build`)
 ```
 
@@ -136,6 +136,9 @@ LIGHTLEAF_REVIEWER_URL=http://127.0.0.1:18090 LIGHTLEAF_REVIEWER_SECRET=<same> .
 
 - Commits: one logical change per commit, with an explanatory body (why, not only what). Don't mix refactors,
   features and docs. When one file holds several concerns, stage them separately.
+- Comments: explain in doc comments (`///`, `//!`). A plain `//` comment fails `cargo xtask lint` unless it
+  starts with `keep:` (load-bearing: security, non-obvious invariant, attribution, external constraint),
+  `SAFETY:` or `TODO(name):`. Don't add narration or section banners.
 - New env var → `config.rs`, README configuration table, `.env.example`.
 - New user-visible security behaviour → README "Security notes".
 - Keep dependencies light (see CONTRIBUTING.md design principles); prefer std/tokio over new crates.

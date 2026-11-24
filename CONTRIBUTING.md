@@ -14,8 +14,8 @@ cd frontend && npm run dev                             # hot-reloading UI on :51
 
 ## Before opening a pull request
 
-- `cargo fmt` and `cargo clippy` are clean
-- `cargo test` passes
+- `cargo fmt --check` is clean and `cargo xtask lint` passes (see README "Tests and lint")
+- `cargo test --workspace` passes
 - `cd frontend && npm run build` passes (includes the TypeScript check)
 - Keep changes focused; one feature or fix per PR
 - For larger changes, open an issue first so we can agree on the approach

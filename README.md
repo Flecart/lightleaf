@@ -244,6 +244,27 @@ cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api and /gi
 cargo test
 ```
 
+### Tests and lint
+
+```bash
+cargo test --workspace         # unit tests of lightleaf, lightleaf-reviewer and xtask
+cargo xtask lint               # clippy tiers + comment rule; exits 1 on a mandatory finding
+cargo xtask lint --fix-comments  # delete refused comments (only when the code stays identical)
+cargo xtask lint --list-comments # every plain comment with its verdict
+```
+
+- **Mandatory** (errors) in the core crates, `lightleaf` and `lightleaf-reviewer`: rustc warnings,
+  `clippy::correctness`, `clippy::suspicious`, and the comment rule.
+- **Advisory** (warnings, never failing): `clippy::style`, `complexity`, `perf` and `pedantic`
+  everywhere, and all findings in other crates (`xtask`).
+- **Comment rule:** plain `//` and `/* */` comments are refused. Explanations belong in doc comments
+  (`///`, `//!`), which always stay. Also allowed: `// SAFETY:`, `// TODO(name):`, SPDX/license
+  headers, `// @generated`, and `// keep:` for a load-bearing comment (a security reason, a
+  non-obvious invariant, an attribution, or a constraint from an external system). In a block of
+  consecutive `//` lines, the marker on the first line covers the block.
+
+CI runs `cargo fmt --check`, `cargo xtask lint` and `cargo test --workspace`.
+
 ## AI review (optional)
 
 A separate service, [`lightleaf-reviewer`](reviewer/README.md), can review your paper with a team of AI reviewers
