@@ -22,7 +22,8 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 - **Overleaf-like UI** — file tree with drag & drop, CodeMirror 6 editor, PDF preview, resizable panes, editor/PDF/split layouts, light & dark themes.
 - **Real-time collaboration** — conflict-free editing with [Yjs](https://yjs.dev) CRDTs (server side: [`yrs`](https://github.com/y-crdt/y-crdt)), live cursors and selections, presence avatars, project chat.
 - **LaTeX** — [folio](https://github.com/flecart/folio), a LaTeX compiler written in Rust and the default for new
-  projects (no SyncTeX yet; documents it cannot handle are compiled through its slimtex fallback). `pdflatex` is still
+  projects (no SyncTeX yet, so PDF ↔ source jumps need pdflatex; documents folio cannot handle are compiled through
+  its slimtex fallback, which does write SyncTeX). `pdflatex` is still
   available (through `latexmk` when installed, otherwise an automatic bibtex/biber/makeindex rerun pipeline), but
   every pdflatex compile carries a warning to switch to folio. XeLaTeX, LuaLaTeX and Tectonic are **not supported**:
   imported projects that ask for them get folio (or pdflatex) and an "incompatible" note, and a project still set to one
