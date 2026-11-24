@@ -478,9 +478,9 @@ async fn compile_pdflatex(
 }
 
 /// Compiles with folio (<https://github.com/flecart/folio>), a LaTeX compiler written in Rust.
-/// Folio handles bibliographies in process and writes SyncTeX with `--synctex` (its slimtex
-/// fallback does not, so [`compile`] checks for the file). Documents that use
-/// constructs folio does not support are handed to slimtex by folio itself
+/// Folio handles bibliographies in process and writes SyncTeX with `--synctex`, natively or by
+/// passing it to its fallback engine; [`compile`] still checks for the file. Documents that use
+/// constructs folio does not support are handed to that engine by folio itself
 /// (`--fallback=auto`), which leaves an ordinary TeX log next to the PDF.
 async fn compile_folio(
     state: &SharedState,
@@ -894,7 +894,7 @@ pub async fn compile(
         "synctex": tools().synctex
             && match compiler.as_str() {
                 "typst" => false,
-                // keep: the slimtex fallback writes none
+                // keep: folio writes it natively and via its fallback engine, but check, don't assume
                 "folio" => build.join(format!("{s}.synctex.gz")).exists(),
                 _ => true,
             },
