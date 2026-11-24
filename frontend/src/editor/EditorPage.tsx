@@ -339,7 +339,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     : !result
       ? 'Compile the project to jump between source and PDF'
       : result.mainFile.endsWith('.tex') && project?.compiler === 'folio'
-        ? 'No SyncTeX data: folio does not write it yet for documents it typesets itself. Switch the project to pdflatex (project menu) to jump between PDF and source'
+        ? 'No SyncTeX data: folio’s slimtex fallback compiled this document and writes none (pdflatex does), or synctex is not installed on the server'
         : 'No SyncTeX data for this PDF (is the synctex tool installed on the server?)';
   const pdfDoc = useRef<PDFDocumentProxy | null>(null);
 
