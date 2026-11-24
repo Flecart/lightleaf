@@ -15,9 +15,22 @@ export interface PdfHighlight {
   nonce: number;
 }
 
+/** A point of the PDF in PDF points from the page's top-left corner (1-based page). */
+export interface PdfPoint {
+  page: number;
+  x: number;
+  y: number;
+}
+
+export interface PdfViewHandle {
+  /** The point a reader is looking at: a third down the visible area, in the left half of the text. */
+  focusPoint(): PdfPoint | null;
+}
+
 interface Props {
   url: string | null;
   highlight: PdfHighlight | null;
+  handle?: { current: PdfViewHandle | null };
   onDoubleClick?: (page: number, x: number, y: number) => void;
   /** The loaded document, e.g. for text-based sync of Typst output. */
   onDocument?: (doc: PDFDocumentProxy | null) => void;
@@ -89,6 +102,26 @@ export function PdfViewer(props: Props) {
   const scale =
     zoom === 'fit' ? Math.max(0.2, (width - 32) / maxW) : zoom === 'page' ? Math.max(0.2, Math.min((width - 32) / maxW, (height - 24) / firstH)) : zoom;
 
+  useEffect(() => {
+    if (!props.handle) return;
+    props.handle.current = {
+      focusPoint() {
+        const el = scroller.current;
+        if (!el) return null;
+        const mid = el.scrollTop + el.clientHeight / 3;
+        const pages = Array.from(el.querySelectorAll<HTMLElement>('.pdf-page'));
+        const i = pages.findIndex((p) => p.offsetTop + p.offsetHeight > mid);
+        const pageEl = pages[i];
+        const size = sizes[i];
+        if (!pageEl || !size) return null;
+        return { page: i + 1, x: size.w * 0.3, y: Math.max(0, (mid - pageEl.offsetTop) / scale) };
+      },
+    };
+    return () => {
+      if (props.handle) props.handle.current = null;
+    };
+  }, [props.handle, sizes, scale]);
+
   // Render visible pages lazily
   useEffect(() => {
     const el = scroller.current;
@@ -135,7 +168,8 @@ export function PdfViewer(props: Props) {
     return () => io.disconnect();
   }, [doc, scale]);
 
-  // Scroll to SyncTeX highlight
+  // Scroll to SyncTeX highlight, also once the pages exist when the pane opened for it
+  const hasPages = sizes.length > 0;
   useEffect(() => {
     const h = props.highlight;
     const el = scroller.current;
@@ -157,7 +191,7 @@ export function PdfViewer(props: Props) {
       clearTimeout(t);
       box.remove();
     };
-  }, [props.highlight]);
+  }, [props.highlight, hasPages]);
 
   const setZ = (z: Zoom) => {
     setZoom(z);

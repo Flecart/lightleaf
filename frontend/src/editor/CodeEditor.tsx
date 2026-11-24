@@ -40,6 +40,8 @@ interface Props {
   refs: RefSource;
   issues: Issue[];
   onCompile: () => void;
+  /** Jump from the cursor to its place in the PDF (Mod-Alt-j). */
+  onSyncToPdf?: () => void;
   onCursor?: (line: number) => void;
   handle: { current: EditorHandle | null };
 }
@@ -91,6 +93,7 @@ export function CodeEditor(props: Props) {
         keymap.of([
           { key: 'Mod-s', run: () => (propsRef.current.onCompile(), true), preventDefault: true },
           { key: 'Mod-Enter', run: () => (propsRef.current.onCompile(), true) },
+          { key: 'Mod-Alt-j', run: () => (propsRef.current.onSyncToPdf?.(), true), preventDefault: true },
           ...formatKeymap(b.path),
           ...closeBracketsKeymap,
           ...yUndoManagerKeymap,

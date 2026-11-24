@@ -3,7 +3,9 @@ import { api, CompileResult, del, Entry, get, patch, post, Project, User } from 
 import { Avatar, Icon, Logo, Modal, Spinner, toast } from '../ui';
 import { DocBinding, PresenceUser, ProjectSocket } from './socket';
 import { CodeEditor, EditorHandle } from './CodeEditor';
-import { PdfHighlight, PdfViewer } from './PdfViewer';
+import { PdfHighlight, PdfViewer, PdfViewHandle } from './PdfViewer';
+
+const SYNC_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘⌥J' : 'Ctrl+Alt+J';
 import { FileTree, TreeActions } from './FileTree';
 import { ChatPanel, GitModal, HistoryPanel, LogsPanel, ShareModal } from './Panels';
 import { ReviewEntry } from '../review/ReviewEntry';
@@ -340,6 +342,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
       ? 'Compile the project to jump between source and PDF'
       : 'No SyncTeX data for this PDF (is the synctex tool installed on the server?)';
   const pdfDoc = useRef<PDFDocumentProxy | null>(null);
+  const pdfView = useRef<PdfViewHandle | null>(null);
 
   const typstSources = async (): Promise<SourceFile[]> => {
     const open = openPathRef.current;
@@ -385,6 +388,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
       toast(syncUnavailable, 'info');
       return;
     }
+    if (layout === 'editor') setLayout('split');
     if (typst) {
       const view = editorHandle.current?.view;
       const doc = pdfDoc.current;
@@ -400,6 +404,16 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     } catch {
       toast('No PDF location for this line', 'info');
     }
+  };
+
+  /** The code behind the part of the PDF in view (the ← arrow). */
+  const syncFromPdfView = () => {
+    if (syncUnavailable) {
+      toast(syncUnavailable, 'info');
+      return;
+    }
+    const p = pdfView.current?.focusPoint();
+    if (p) syncToCode(p.page, p.x, p.y);
   };
 
   // ---- splitters -----------------------------------------------------------------------------
@@ -512,6 +526,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                       refs={refs}
                       issues={result?.issues ?? []}
                       onCompile={compile}
+                      onSyncToPdf={syncToPdf}
                       onCursor={setCursorLine}
                       handle={editorHandle}
                     />
@@ -528,7 +543,30 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                   )}
                 </section>
               )}
-              {layout === 'split' && <div class="splitter" onPointerDown={(e) => dragSplit(e as PointerEvent, 'split')} />}
+              {layout === 'split' && (
+                <div class="splitter" onPointerDown={(e) => dragSplit(e as PointerEvent, 'split')}>
+                  {openPath && binding && (
+                    <div class="sync-arrows" onPointerDown={(e) => e.stopPropagation()}>
+                      <button
+                        class={`sync-arrow ${syncUnavailable ? 'unavailable' : ''}`}
+                        title={syncUnavailable ?? `Show the cursor's position in the PDF (${SYNC_KEY})`}
+                        aria-label="Show the cursor's position in the PDF"
+                        onClick={syncToPdf}
+                      >
+                        <Icon name="arrow-right" />
+                      </button>
+                      <button
+                        class={`sync-arrow ${syncUnavailable ? 'unavailable' : ''}`}
+                        title={syncUnavailable ?? 'Go to the code for the part of the PDF in view (or double-click the PDF)'}
+                        aria-label="Go to the code for the part of the PDF in view"
+                        onClick={syncFromPdfView}
+                      >
+                        <Icon name="arrow-left" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {layout !== 'editor' && (
                 <section class="pane pdf-pane" style={{ flex: 1 }}>
                   <div class="pane-head pdf-head">
@@ -540,15 +578,6 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                         <input type="checkbox" checked={autoCompile} onChange={(e) => setAutoCompile(e.currentTarget.checked)} /> Auto
                       </label>
                     </div>
-                    {openPath && binding && (
-                      <button
-                        class={`icon-btn ${syncUnavailable ? 'unavailable' : ''}`}
-                        title={syncUnavailable ?? 'Jump to the cursor’s location in the PDF (double-click the PDF to jump back)'}
-                        onClick={syncToPdf}
-                      >
-                        <Icon name="arrow-right" />
-                      </button>
-                    )}
                     <button class={`btn small logs-btn ${showLogs ? 'active' : ''}`} onClick={() => setShowLogs(!showLogs)}>
                       <Icon name="log" /> Logs
                       {errors > 0 && <span class="count error">{errors}</span>}
@@ -572,7 +601,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                           <Icon name="alert" /> {result.status === 'timeout' ? 'Compilation timed out.' : 'Compilation failed.'} Click to see the logs.
                         </div>
                       )}
-                      <PdfViewer url={pdfUrl} highlight={highlight} onDoubleClick={syncToCode} onDocument={(d) => (pdfDoc.current = d)} />
+                      <PdfViewer url={pdfUrl} highlight={highlight} handle={pdfView} onDoubleClick={syncToCode} onDocument={(d) => (pdfDoc.current = d)} />
                     </>
                   )}
                 </section>

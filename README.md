@@ -22,7 +22,7 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 - **Overleaf-like UI** — file tree with drag & drop, CodeMirror 6 editor, PDF preview, resizable panes, editor/PDF/split layouts, light & dark themes.
 - **Real-time collaboration** — conflict-free editing with [Yjs](https://yjs.dev) CRDTs (server side: [`yrs`](https://github.com/y-crdt/y-crdt)), live cursors and selections, presence avatars, project chat.
 - **LaTeX** — [folio](https://github.com/flecart/folio), a LaTeX compiler written in Rust and the default for new
-  projects. It writes SyncTeX, so double-clicking the PDF jumps to the source and back, also for documents it hands
+  projects. It writes SyncTeX for PDF ↔ source jumps (see SyncTeX below), also for documents it hands
   to its pdflatex fallback. `pdflatex` is still
   available (through `latexmk` when installed, otherwise an automatic bibtex/biber/makeindex rerun pipeline), but
   every pdflatex compile carries a warning to switch to folio. XeLaTeX, LuaLaTeX and Tectonic are **not supported**:
@@ -30,8 +30,10 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
   of them is told to switch when it compiles.
 - **Typst** — first-class support, with syntax highlighting and an outline.
 - **Error log** — parsed errors, warnings and bad boxes, clickable to jump to the line; inline diagnostics in the editor.
-- **SyncTeX** — double-click the PDF to jump to the source, and jump from the source to the PDF. Typst projects get the
-  same two jumps by matching the PDF text against the sources (the Typst CLI writes no SyncTeX data).
+- **SyncTeX** — jump between source and PDF both ways: the arrows on the divider between editor and PDF (→ shows the
+  cursor's position in the PDF, ← goes to the code for the part of the PDF in view), **Ctrl+Alt+J** (⌘⌥J on macOS)
+  from the cursor, or a double-click on the PDF. Typst projects get the same jumps by matching the PDF text against
+  the sources (the Typst CLI writes no SyncTeX data).
 - **Compile the open file** — if the file you are editing is a document of its own, the preview shows that file instead
   of the main document. For Typst, that means no other `.typ` file imports or includes it; for LaTeX, it means the file
   has a `\documentclass`. Chapters, libraries and other files fall back to the main document.
