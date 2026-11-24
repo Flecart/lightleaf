@@ -104,6 +104,7 @@ input[type='checkbox'] { accent-color: var(--green); }
 .icon-btn:hover { background: var(--hover); }
 .icon-btn.active { background: var(--selected); color: var(--green); }
 .icon-btn.danger:hover { color: var(--danger); }
+.icon-btn.unavailable { opacity: 0.45; }
 button.link { background: none; border: 0; color: var(--green); cursor: pointer; font: inherit; padding: 0; }
 .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--hover); color: var(--muted); margin-left: 8px; vertical-align: 1px; }
 .badge.tex { background: var(--green-l); color: var(--green); }

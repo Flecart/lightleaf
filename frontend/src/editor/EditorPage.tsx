@@ -333,6 +333,14 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
   // Typst writes no SyncTeX data; its output is matched against the sources by text instead.
   const typst = !!result?.mainFile.endsWith('.typ');
   const canSync = !!result?.synctex || typst;
+  // Why PDF ↔ source jumps are unavailable, shown instead of failing silently.
+  const syncUnavailable = canSync
+    ? null
+    : !result
+      ? 'Compile the project to jump between source and PDF'
+      : result.mainFile.endsWith('.tex') && project?.compiler === 'folio'
+        ? 'No SyncTeX data: folio’s slimtex fallback compiled this document and writes none (pdflatex does), or synctex is not installed on the server'
+        : 'No SyncTeX data for this PDF (is the synctex tool installed on the server?)';
   const pdfDoc = useRef<PDFDocumentProxy | null>(null);
 
   const typstSources = async (): Promise<SourceFile[]> => {
@@ -357,19 +365,28 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
       const [words, files] = await Promise.all([pdfWords(doc), typstSources()]);
       const r = backward(page, x, y, words, files);
       if (r) jumpTo(r.file, r.line);
+      else toast('No source location for this spot', 'info');
       return;
     }
-    if (!result?.synctex) return;
+    if (syncUnavailable) {
+      toast(syncUnavailable, 'info');
+      return;
+    }
     try {
       const r = await get<{ file: string; line: number }>(`/api/projects/${pid}/synctex/pdf?page=${page}&h=${x}&v=${y}`);
       if (entriesRef.current.some((e) => e.path === r.file)) jumpTo(r.file, r.line);
+      else toast(`The source of this spot (${r.file}) is not a project file`, 'info');
     } catch {
-      /* no mapping */
+      toast('No source location for this spot', 'info');
     }
   };
 
   const syncToPdf = async () => {
-    if (!openPath || !canSync) return;
+    if (!openPath) return;
+    if (syncUnavailable) {
+      toast(syncUnavailable, 'info');
+      return;
+    }
     if (typst) {
       const view = editorHandle.current?.view;
       const doc = pdfDoc.current;
@@ -525,8 +542,14 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                         <input type="checkbox" checked={autoCompile} onChange={(e) => setAutoCompile(e.currentTarget.checked)} /> Auto
                       </label>
                     </div>
-                    {canSync && openPath && binding && (
-                      <button class="icon-btn" title="Jump to location in PDF" onClick={syncToPdf}><Icon name="arrow-right" /></button>
+                    {openPath && binding && (
+                      <button
+                        class={`icon-btn ${syncUnavailable ? 'unavailable' : ''}`}
+                        title={syncUnavailable ?? 'Jump to the cursor’s location in the PDF (double-click the PDF to jump back)'}
+                        onClick={syncToPdf}
+                      >
+                        <Icon name="arrow-right" />
+                      </button>
                     )}
                     <button class={`btn small logs-btn ${showLogs ? 'active' : ''}`} onClick={() => setShowLogs(!showLogs)}>
                       <Icon name="log" /> Logs
