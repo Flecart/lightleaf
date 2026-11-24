@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-only"
+description = "Repository tasks for Lightleaf (cargo xtask lint)"
+
+[dependencies]
+quote = "1"
+ra-ap-rustc_lexer = "0.186.0"
+syn = { version = "2", features = ["full"] }
+
+[lints]
+workspace = true

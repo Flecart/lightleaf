@@ -10,7 +10,9 @@ WORKDIR /src
 # Dependencies first, so they are cached across source changes.
 COPY Cargo.toml Cargo.lock ./
 COPY reviewer/Cargo.toml reviewer/Cargo.toml
-RUN mkdir -p src reviewer/src && echo 'fn main() {}' > src/main.rs && echo 'fn main() {}' > reviewer/src/main.rs \
+COPY xtask/Cargo.toml xtask/Cargo.toml
+RUN mkdir -p src reviewer/src xtask/src && echo 'fn main() {}' > src/main.rs && echo 'fn main() {}' > reviewer/src/main.rs \
+ && echo 'fn main() {}' > xtask/src/main.rs \
  && cargo build --release -p lightleaf-reviewer \
  && rm -rf reviewer/src target/release/deps/lightleaf_reviewer* target/release/lightleaf-reviewer*
 COPY reviewer ./reviewer

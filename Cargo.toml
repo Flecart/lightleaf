@@ -12,8 +12,22 @@ categories = ["web-programming", "text-editors"]
 # The AI reviewer is a separate binary with its own dependencies (see reviewer/README.md);
 # a plain `cargo build` only builds Lightleaf itself.
 [workspace]
-members = ["reviewer"]
+members = ["reviewer", "xtask"]
 default-members = ["."]
+
+# One configuration, two tiers: every group warns here, and `cargo xtask lint` makes rustc
+# warnings, clippy::correctness and clippy::suspicious errors for the core crates (lightleaf,
+# lightleaf-reviewer). style, complexity, perf and pedantic stay advisory everywhere.
+[workspace.lints.clippy]
+correctness = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+[lints]
+workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
