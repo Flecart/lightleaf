@@ -130,7 +130,7 @@ impl DocEntry {
         DocEntry {
             doc,
             text,
-            epoch: rand::random::<u64>() >> 12, // keep it exactly representable as a JS number
+            epoch: rand::random::<u64>() >> 12, // keep: keep it exactly representable as a JS number
             dirty: false,
             subscribers: HashSet::new(),
             idle_since: Instant::now(),
@@ -161,7 +161,7 @@ impl DocEntry {
         {
             suf += 1;
         }
-        // Never split a UTF-16 surrogate pair.
+        // keep: Never split a UTF-16 surrogate pair.
         let low = |v: &[u16], i: usize| v.get(i).is_some_and(|c| (0xDC00..0xE000).contains(c));
         if pre > 0 && (low(&a, pre) || low(&b, pre)) {
             pre -= 1;
@@ -509,7 +509,7 @@ pub fn spawn_flusher(state: SharedState) {
                 }
                 if room.evict_idle() {
                     let mut rooms = state.hub.rooms.lock().unwrap();
-                    // Re-check under the hub lock so we never drop a room someone just joined.
+                    // keep: Re-check under the hub lock so we never drop a room someone just joined.
                     if rooms.get(&room.id).is_some_and(|r| Arc::ptr_eq(r, &room))
                         && room.evict_idle()
                     {

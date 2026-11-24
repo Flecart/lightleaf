@@ -148,7 +148,6 @@ impl Client {
                 Err(e) => last = format!("request failed: {e}"),
             }
             if attempt < self.settings.max_retries {
-                // Full jitter: random in [0, min(30 s, 1 s * 2^attempt)).
                 let cap = 30_000u64.min(1000 * 2u64.pow(attempt.min(10)));
                 let jitter = (uuid::Uuid::new_v4().as_u128() % u128::from(cap.max(1))) as u64;
                 tokio::time::sleep(Duration::from_millis(jitter)).await;

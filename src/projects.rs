@@ -201,7 +201,7 @@ pub async fn import_zip(
             Some("name") => name = Some(field.text().await.unwrap_or_default()),
             Some("file") => {
                 if name.is_none() {
-                    // Overleaf exports are named `Project_Name.zip`.
+                    // keep: Overleaf exports are named `Project_Name.zip`.
                     name = field
                         .file_name()
                         .map(|f| f.trim_end_matches(".zip").replace('_', " "));
@@ -371,7 +371,7 @@ pub async fn remove(
     let role = state.role(&id, user.id).await?;
     let pid = id.clone();
     if role != Role::Owner {
-        // Non-owners "delete" a shared project by leaving it.
+        // keep: Non-owners "delete" a shared project by leaving it.
         state
             .db(move |c| {
                 c.execute(
@@ -430,7 +430,6 @@ pub async fn copy(
             anyhow::anyhow!("copy failed: {}", String::from_utf8_lossy(&out.stderr)).into(),
         );
     }
-    // Copy uncommitted working-tree state too, then re-init git config for the copy.
     let (s, d) = (src.clone(), dst.clone());
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
         for (rel, full, meta) in crate::files::walk(&s) {

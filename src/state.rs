@@ -93,8 +93,6 @@ impl AppState {
         let db = self.db.clone();
         let start = self.next_db.fetch_add(1, Ordering::Relaxed);
         let res = tokio::task::spawn_blocking(move || {
-            // Take the first idle connection, starting at a rotating offset; wait only if all
-            // are busy.
             let n = db.len();
             let conn = (0..n)
                 .find_map(|i| db[(start + i) % n].try_lock().ok())
@@ -131,7 +129,6 @@ impl AppState {
             .recent_compiles
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        // Only the coalescing window matters, so old entries can go.
         if m.len() > 1000 {
             m.retain(|_, (t, _)| t.elapsed() < std::time::Duration::from_secs(600));
         }

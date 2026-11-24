@@ -61,7 +61,6 @@ fn sentence_breaks(s: &str) -> Vec<usize> {
 /// The abstract-footnote finding, if the abstract's last sentence has no footnote.
 pub fn abstract_footnote(sections: &[Section], comment: &str) -> Option<Finding> {
     let abs = sections.iter().find(|s| s.level == 0)?;
-    // Drop trailing blank and comment-only lines.
     let mut lines: Vec<&str> = abs.content.lines().collect();
     while lines.last().is_some_and(|l| {
         let t = l.trim();
@@ -73,7 +72,6 @@ pub fn abstract_footnote(sections: &[Section], comment: &str) -> Option<Finding>
     if body.is_empty() {
         return None;
     }
-    // Last uncommented \footnote / \footnotemark / \thanks.
     let mut last = None;
     for cmd in ["\\footnote", "\\footnotemark", "\\thanks"] {
         let mut from = 0;
@@ -88,7 +86,6 @@ pub fn abstract_footnote(sections: &[Section], comment: &str) -> Option<Finding>
         }
     }
     if let Some((_, mut after)) = last {
-        // Skip an optional [..] and the braced argument.
         if body[after..].starts_with('[')
             && let Some(close) = body[after..].find(']')
         {
@@ -115,12 +112,11 @@ pub fn abstract_footnote(sections: &[Section], comment: &str) -> Option<Finding>
             }
         }
         if sentence_breaks(&body[after..]).is_empty() {
-            return None; // the footnote is in the last sentence
+            return None;
         }
     }
     let start = sentence_breaks(&body).last().copied().unwrap_or(0);
     let mut last_sentence = body[start..].to_string();
-    // Remove a trailing inline comment.
     if let Some(p) = (0..last_sentence.len()).find(|&i| {
         last_sentence.as_bytes()[i] == b'%' && (i == 0 || last_sentence.as_bytes()[i - 1] != b'\\')
     }) {
@@ -292,7 +288,7 @@ pub fn section_structure(
     no_setup: &str,
     setup_after: &str,
 ) -> Option<Finding> {
-    // Labels: level-2 sections are "<parent> > <title>".
+    // keep: Labels: level-2 sections are "<parent> > <title>".
     let mut parent = String::new();
     let entries: Vec<(String, &Section)> = sections
         .iter()
@@ -368,7 +364,7 @@ mod tests {
         );
         let f = abstract_footnote(&without, "c").unwrap();
         assert_eq!(f.quote, "We find that Y holds in all cases.");
-        // As upstream: text after the footnote with no further sentence break still counts as
+        // keep: As upstream: text after the footnote with no further sentence break still counts as
         // the last sentence.
         let one_after =
             parse("\\begin{abstract}\nWe study X.\\footnote{a} We find Y.\n\\end{abstract}");

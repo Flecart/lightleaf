@@ -228,7 +228,7 @@ pub fn interpret(v: &Value, sections: &[Section]) -> Classification {
                 .push(title.into());
         }
     }
-    // Appendix sections are assigned automatically (the model was told not to list them).
+    // keep: Appendix sections are assigned automatically (the model was told not to list them).
     for s in sections
         .iter()
         .filter(|s| (1..=2).contains(&s.level) && s.in_appendix)
@@ -241,7 +241,6 @@ pub fn interpret(v: &Value, sections: &[Section]) -> Classification {
             assigned.push(s.title.trim().to_lowercase());
         }
     }
-    // Titles mentioning "appendix" belong to the appendix reviewer whatever the model said.
     let mut moved = Vec::new();
     for (cat, titles) in c
         .single
@@ -264,7 +263,6 @@ pub fn interpret(v: &Value, sections: &[Section]) -> Classification {
             .or_default()
             .push("Abstract".into());
     }
-    // Sections the model skipped (including level-3 ones it never saw).
     for s in sections.iter().filter(|s| s.level > 0) {
         if !assigned.contains(&s.title.trim().to_lowercase()) {
             let cat = if s.in_appendix {

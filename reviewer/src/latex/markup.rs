@@ -31,7 +31,7 @@ pub fn comment_macro(macro_name: &str, label: &str, text: &str) -> String {
     let label: String = label
         .replace('&', "and")
         .chars()
-        // Characters that are safe in an optional argument (no `]`, braces, `%`, `#`, `\\`).
+        // keep: Characters that are safe in an optional argument (no `]`, braces, `%`, `#`, `\\`).
         .filter(|c| {
             c.is_alphanumeric() || matches!(c, ' ' | ',' | '-' | ':' | '+' | '(' | ')' | '.' | '/')
         })
@@ -42,7 +42,7 @@ pub fn comment_macro(macro_name: &str, label: &str, text: &str) -> String {
 /// Length of a `\<macro>[…]{…}` or `\<macro>{…}` occurrence at the start of `s`, if well formed.
 fn macro_len(s: &str, macro_name: &str) -> Option<usize> {
     let mut i = macro_name.len() + 1;
-    // `\AI` must not be the prefix of a longer command such as `\AIbox`.
+    // keep: `\AI` must not be the prefix of a longer command such as `\AIbox`.
     if s[i..].starts_with(|c: char| c.is_ascii_alphabetic()) {
         return None;
     }
@@ -94,7 +94,6 @@ pub fn ensure_package(main: &str) -> anyhow::Result<Option<String>> {
     let mut offset = 0;
     for line in main.split_inclusive('\n') {
         if let Some(i) = code_part(line).find("\\documentclass") {
-            // Skip an optional argument that may span lines, then the mandatory one.
             let mut p = offset + i + "\\documentclass".len();
             let rest = main[p..].trim_start();
             p = main.len() - rest.len();

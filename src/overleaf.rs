@@ -122,7 +122,6 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
         })
         .collect();
 
-    // Strip one wrapping folder if every meaningful entry lives inside it.
     let meaningful: Vec<&String> = names
         .iter()
         .filter(|n| !is_junk(n) && !n.is_empty())
@@ -150,7 +149,7 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
             report.skipped.push(name);
             continue;
         }
-        // Rejects absolute paths and `..` (zip-slip).
+        // keep: Rejects absolute paths and `..` (zip-slip).
         let Ok(rel) = clean_rel_path(&name) else {
             report.skipped.push(name);
             continue;
@@ -174,7 +173,7 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
         if let Some(p) = full.parent() {
             std::fs::create_dir_all(p)?;
         }
-        // Read through a hard limit so a lying size header cannot exhaust the disk.
+        // keep: Read through a hard limit so a lying size header cannot exhaust the disk.
         let mut out = std::fs::File::create(&full)?;
         let copied = std::io::copy(&mut (&mut f).take(MAX_TOTAL_BYTES + 1), &mut out)?;
         if copied > MAX_TOTAL_BYTES {
@@ -187,10 +186,6 @@ pub fn import_zip(bytes: &[u8], root: &Path) -> anyhow::Result<ImportReport> {
     }
     Ok(report)
 }
-
-// ---------------------------------------------------------------------------------------------
-// Root document & engine detection
-// ---------------------------------------------------------------------------------------------
 
 /// Removes TeX comments (unescaped `%` to end of line).
 fn strip_comments(src: &str) -> String {
@@ -297,7 +292,6 @@ pub fn detect(root: &Path) -> Detected {
 }
 
 fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
-    // 1. Magic comment, e.g. `% !TEX program = xelatex` (TeXShop, TeXstudio, VS Code, ...).
     for line in src.lines().take(30) {
         let l = line.trim().to_ascii_lowercase();
         if l.starts_with('%')
@@ -313,7 +307,6 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
             }
         }
     }
-    // 2. latexmkrc in the project root (Overleaf honours this file too).
     for rc in ["latexmkrc", ".latexmkrc"] {
         if let Ok(conf) = std::fs::read_to_string(root.join(rc)) {
             let conf = conf
@@ -336,7 +329,6 @@ fn detect_engine(root: &Path, main: &str, src: &str) -> (String, String) {
             }
         }
     }
-    // 3. Engine-specific packages.
     let code = strip_comments(src);
     let uses = |pkgs: &[&'static str]| loads_package(&code, pkgs);
     if let Some(p) = uses(&[

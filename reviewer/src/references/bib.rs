@@ -134,7 +134,6 @@ pub fn parse(text: &str, file: &str) -> Vec<Entry> {
     let mut strings = month_macros();
     let mut out = Vec::new();
     while p.i < s.len() {
-        // Outside entries: skip `%` comment lines and junk until the next `@`.
         match s[p.i] {
             b'%' => {
                 while p.i < s.len() && s[p.i] != b'\n' {
@@ -159,7 +158,6 @@ pub fn parse(text: &str, file: &str) -> Vec<Entry> {
         p.i += 1;
         match kind.as_str() {
             "comment" | "preamble" => {
-                // Skip to the matching close.
                 let mut depth = 1;
                 while p.i < s.len() && depth > 0 {
                     if s[p.i] == open {
@@ -206,7 +204,6 @@ pub fn parse(text: &str, file: &str) -> Vec<Entry> {
                     let name = p.ident().to_lowercase();
                     p.skip_ws();
                     if name.is_empty() || s.get(p.i) != Some(&b'=') {
-                        // Not a field: resynchronise at the next comma or the end of the entry.
                         while p.i < s.len() && s[p.i] != b',' && s[p.i] != close {
                             p.i += 1;
                         }

@@ -96,7 +96,7 @@ pub fn now() -> u64 {
 /// Today's date as YYYY-MM-DD (UTC).
 pub fn today() -> String {
     let days = (now() / 86_400) as i64;
-    // Civil-from-days (Howard Hinnant's algorithm).
+    // keep: Civil-from-days (Howard Hinnant's algorithm).
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

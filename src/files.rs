@@ -232,7 +232,6 @@ pub async fn rename(
     tokio::fs::rename(&from_full, &to_full)
         .await
         .map_err(|_| AppError::not_found())?;
-    // Keep the main file setting valid when it gets renamed.
     let (pid, f, t) = (id.clone(), from.clone(), to.clone());
     state
         .db(move |c| {
@@ -363,7 +362,7 @@ pub async fn download_zip(
         })
         .await?;
     let root = state.cfg.project_dir(&id);
-    // Leave out the .gitignore Lightleaf generated itself, so the archive matches Overleaf's.
+    // keep: Leave out the .gitignore Lightleaf generated itself, so the archive matches Overleaf's.
     let bytes = tokio::task::spawn_blocking(move || {
         crate::overleaf::export_zip(&root, |rel, data| {
             rel == ".gitignore" && data == crate::projects::GITIGNORE.as_bytes()
@@ -371,7 +370,7 @@ pub async fn download_zip(
     })
     .await
     .map_err(anyhow::Error::from)??;
-    // Overleaf names downloads `Project_Name.zip`.
+    // keep: Overleaf names downloads `Project_Name.zip`.
     let ascii: String = name
         .chars()
         .map(|c| {

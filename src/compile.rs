@@ -106,7 +106,8 @@ fn pdflatex_warning() -> Issue {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Issue {
-    level: &'static str, // error | warning | typesetting
+    /// `error`, `warning` or `typesetting`.
+    level: &'static str,
     file: Option<String>,
     line: Option<u32>,
     message: String,
@@ -193,7 +194,7 @@ async fn run_env(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // Hardening for TeX: restricted shell escape only, restricted file access, unwrapped logs.
+        // keep: Hardening for TeX: restricted shell escape only, restricted file access, unwrapped logs.
         .env("shell_escape", "p")
         .env("openout_any", "p")
         .env("openin_any", "p")
@@ -302,7 +303,7 @@ fn typst_deps(text: &str) -> Vec<&str> {
                 i = text[i + 2..].find("*/").map_or(b.len(), |e| i + 2 + e + 2);
             }
             b'"' => {
-                // Skip string literals so `//` inside them is not taken for a comment.
+                // keep: Skip string literals so `//` inside them is not taken for a comment.
                 i += 1;
                 while i < b.len() && b[i] != b'"' && b[i] != b'\n' {
                     i += if b[i] == b'\\' { 2 } else { 1 };
@@ -427,7 +428,6 @@ async fn compile_pdflatex(
             .unwrap_or_else(|_| r.output.clone());
         return Ok((log, r.timed_out));
     }
-    // Manual pipeline: pdflatex → (bibtex|biber) → pdflatex (until references settle).
     let mut tex = [
         "pdflatex",
         "-interaction=nonstopmode",
@@ -489,7 +489,7 @@ async fn compile_folio(
     deadline: Instant,
 ) -> std::io::Result<(String, bool, Vec<Issue>)> {
     let s = stem(main);
-    // Outputs of an earlier run with another engine would be mistaken for this run's:
+    // keep: Outputs of an earlier run with another engine would be mistaken for this run's:
     // a stale .log for slimtex's, a stale .synctex.gz for a PDF it does not describe.
     for ext in ["log", "synctex.gz"] {
         let _ = tokio::fs::remove_file(dir.join(format!("{s}.{ext}"))).await;
@@ -589,7 +589,7 @@ fn parse_latex_log(log: &str) -> Vec<Issue> {
     let mut i = 0;
     while i < lines.len() {
         let l = lines[i];
-        // file:line: message   (thanks to -file-line-error)
+        // keep: file:line: message   (thanks to -file-line-error)
         if let Some((file, rest)) = split_file_line(l) {
             let (line, msg) = rest;
             let ctx = lines
@@ -667,7 +667,6 @@ fn parse_latex_log(log: &str) -> Vec<Issue> {
         }
         i += 1;
     }
-    // De-duplicate "! " errors that duplicate a file:line: error.
     let mut seen = HashSet::new();
     issues.retain(|is| seen.insert((is.level, is.line, is.message.clone())));
     issues
@@ -775,7 +774,7 @@ pub async fn compile(
         )));
     }
 
-    // Fairness: one user cannot fill the global compile queue.
+    // keep: Fairness: one user cannot fill the global compile queue.
     let _user_slot = state.limits.user_compile_slot(user.id).ok_or_else(|| {
         crate::metrics::Metrics::inc(&state.metrics.compiles_rejected);
         AppError(
@@ -784,11 +783,10 @@ pub async fn compile(
         )
     })?;
 
-    // One compile per project at a time; queued globally by the semaphore.
     let arrived = Instant::now();
     let build_lock = state.project_lock(&format!("build:{id}"));
     let _b = build_lock.lock().await;
-    // Coalescing: if a compile of the same document started after this request arrived, it
+    // keep: Coalescing: if a compile of the same document started after this request arrived, it
     // already includes every edit this request could have wanted, so reuse its result. With
     // auto-compile and several collaborators, a burst of N requests costs at most two compiles.
     let key = format!("{id}\0{compiler}\0{main}");
@@ -852,7 +850,7 @@ pub async fn compile(
     } else {
         let (log, t) = compile_pdflatex(&state, &build, &main, deadline).await?;
         let mut issues = parse_latex_log(&log);
-        // TeX ran in the main file's folder (tex_workdir) and names files from there.
+        // keep: TeX ran in the main file's folder (tex_workdir) and names files from there.
         for is in &mut issues {
             if let Some(f) = is.file.take() {
                 is.file = Some(project_path(main_dir(&main), &f).unwrap_or(f));
@@ -865,7 +863,7 @@ pub async fn compile(
     let ok = tokio::fs::metadata(&pdf).await.is_ok();
     if ok {
         tokio::fs::copy(&pdf, build.join(".output.pdf")).await?;
-        // SyncTeX lookups go to the document shown, which need not be the main file.
+        // keep: SyncTeX lookups go to the document shown, which need not be the main file.
         tokio::fs::write(build.join(".output.main"), &main).await?;
     }
     let mut full_log = log;
@@ -896,7 +894,7 @@ pub async fn compile(
         "synctex": tools().synctex
             && match compiler.as_str() {
                 "typst" => false,
-                // the slimtex fallback writes none
+                // keep: the slimtex fallback writes none
                 "folio" => build.join(format!("{s}.synctex.gz")).exists(),
                 _ => true,
             },
@@ -988,7 +986,7 @@ pub async fn synctex_from_pdf(
                 .strip_prefix(&*build.to_string_lossy())
                 .unwrap_or(f)
                 .trim_start_matches('/');
-            // `main/./part.tex`, or `main/../root.tex` for a file found on the root fallback.
+            // keep: `main/./part.tex`, or `main/../root.tex` for a file found on the root fallback.
             file = Some(project_path("", rel).unwrap_or_else(|| rel.to_string()));
         } else if let Some(n) = l.strip_prefix("Line:") {
             line = n.trim().parse::<u32>().ok();
@@ -1019,7 +1017,7 @@ pub async fn synctex_from_code(
     state.require(&id, user.id, Role::Viewer).await?;
     let (pdf, build, main) = main_pdf(&state, &id).await?;
     let rel = clean_rel_path(&q.file)?;
-    // SyncTeX keeps the name TeX opened: `<main folder>/x.tex`, or `<main folder>/../x.tex` for a
+    // keep: SyncTeX keeps the name TeX opened: `<main folder>/x.tex`, or `<main folder>/../x.tex` for a
     // file found on the project-root fallback (see tex_workdir). Try both.
     let d = main_dir(&main);
     let mut inputs = vec![build.join(&rel)];
@@ -1062,7 +1060,7 @@ pub async fn synctex_from_code(
                 res.insert(key.to_string(), json!(n));
             }
             if k == "H" {
-                break; // first record is enough
+                break;
             }
         }
     }

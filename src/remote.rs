@@ -237,7 +237,7 @@ async fn git_remote(dir: &FsPath, args: &[&str], cred: Option<&Credential>) -> A
     cmd.env_remove("GIT_ASKPASS")
         .env_remove("SSH_ASKPASS")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        // An empty value resets the helper list (dropping the server user's helpers).
+        // keep: An empty value resets the helper list (dropping the server user's helpers).
         .env("GIT_CONFIG_COUNT", "2")
         .env("GIT_CONFIG_KEY_0", "credential.helper")
         .env("GIT_CONFIG_VALUE_0", "")
@@ -257,7 +257,7 @@ async fn git_remote(dir: &FsPath, args: &[&str], cred: Option<&Credential>) -> A
         .map_err(|_| AppError::conflict(format!("git {} timed out", args[0])))?
         .map_err(|e| AppError::conflict(format!("cannot run git: {e}")))?;
     if !out.status.success() {
-        // Merge conflicts are reported on stdout, transport errors on stderr.
+        // keep: Merge conflicts are reported on stdout, transport errors on stderr.
         let msg = format!(
             "{}\n{}",
             String::from_utf8_lossy(&out.stderr).trim(),
@@ -376,7 +376,7 @@ fn parse_remote_input(
     let host = url_host(&clean).ok_or_else(|| AppError::bad("invalid remote URL"))?;
     let mut cred = info.as_deref().and_then(userinfo_credential);
     if let Some(t) = nonempty(token) {
-        // With a separate token, the URL's userinfo can only be a username (`git@host` as
+        // keep: With a separate token, the URL's userinfo can only be a username (`git@host` as
         // Overleaf shows it), never the `token@host` shorthand.
         let user = info
             .as_deref()
@@ -458,7 +458,7 @@ pub async fn set_remote(
             )
             .await?
         }
-        // A token is only ever sent to the host it was entered for.
+        // keep: A token is only ever sent to the host it was entered for.
         None if req.clear_token || existing.as_ref().is_some_and(|c| c.host != host) => {
             delete_credential(&state, &id).await?
         }
@@ -704,7 +704,7 @@ mod tests {
             split_userinfo("https://git.overleaf.com/6a34"),
             ("https://git.overleaf.com/6a34".into(), None)
         );
-        // '@' after the path is not userinfo.
+        // keep: '@' after the path is not userinfo.
         assert_eq!(split_userinfo("https://h/a@b").1, None);
         assert_eq!(
             url_host("https://Git.Overleaf.com:443/x"),
@@ -749,7 +749,7 @@ mod tests {
             cred("https://git@git.overleaf.com/6a34", Some("me"), olp),
             Some(("me".into(), "olp_x".into()))
         );
-        // Without a separate token, a bare userinfo is still a GitHub-style token.
+        // keep: Without a separate token, a bare userinfo is still a GitHub-style token.
         assert_eq!(
             cred("https://ghp_x@github.com/a/b", None, None),
             Some(("x-access-token".into(), "ghp_x".into()))

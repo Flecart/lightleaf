@@ -171,7 +171,6 @@ impl Pack for PaperMentor {
                 self.system_prompt(name, preamble, skills, keys, &class.guidance, o)
             };
 
-            // Section and whole-paper reviewers.
             let figures = sections::figures_and_tables(&text);
             for d in STATIC {
                 let input = match d.input {
@@ -201,7 +200,6 @@ impl Pack for PaperMentor {
                 ));
             }
 
-            // Paper type reviewer, when the type has a guide.
             let type_skill = format!("03_paper_types/{}_paper.md", class.paper_type);
             if self.has_skill(&type_skill) {
                 let preamble = crate::review::template::render(
@@ -223,7 +221,6 @@ impl Pack for PaperMentor {
                 ));
             }
 
-            // Venue reviewer, when a venue other than arXiv has a guide.
             let venue_skill = format!("02_venues/{venue}.md");
             if venue != "arxiv" && self.has_skill(&venue_skill) {
                 let preamble = crate::review::template::render(
@@ -235,7 +232,6 @@ impl Pack for PaperMentor {
                 out.push(self.reviewer("venue".into(), name, sys, text.clone(), false, &schema));
             }
 
-            // One hybrid reviewer per category pair.
             for ((a, b), titles) in &class.pairs {
                 let cats = [a.as_str(), b.as_str()];
                 let members: Vec<&Def> = STATIC
@@ -277,7 +273,6 @@ impl Pack for PaperMentor {
                 }
             }
 
-            // Rule-based checks.
             if let Some(f) = rules::abstract_footnote(
                 &secs,
                 self.files.must("fixed/abstract_footnote.comment.txt"),

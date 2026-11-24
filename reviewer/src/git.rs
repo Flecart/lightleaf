@@ -18,7 +18,7 @@ impl Repo {
     fn cmd(&self, cwd: &Path) -> Command {
         let mut c = Command::new("git");
         c.current_dir(cwd)
-            // The token travels in a header, never in the URL or .git/config.
+            // keep: The token travels in a header, never in the URL or .git/config.
             .arg("-c")
             .arg(format!("http.extraHeader={}", self.auth_header))
             .arg("-c")

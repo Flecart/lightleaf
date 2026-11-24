@@ -65,7 +65,6 @@ fn decode_accents(s: &str) -> String {
     while i < b.len() {
         if b[i] == '\\' && i + 1 < b.len() {
             let c = b[i + 1];
-            // Symbol accents: \" \' \` \^ \~ \= \.
             if matches!(c, '"' | '\'' | '`' | '^' | '~' | '=' | '.')
                 || (matches!(c, 'v' | 'u' | 'H' | 'c' | 'k' | 'r')
                     && i + 2 < b.len()
@@ -76,7 +75,7 @@ fn decode_accents(s: &str) -> String {
                     j += 1;
                 }
                 if j < b.len() && b[j].is_alphabetic() {
-                    // `{\"u}`: drop the group's opening brace too (its `}` is skipped below).
+                    // keep: `{\"u}`: drop the group's opening brace too (its `}` is skipped below).
                     if out.ends_with('{') {
                         out.pop();
                     }
@@ -89,7 +88,6 @@ fn decode_accents(s: &str) -> String {
                     continue;
                 }
             }
-            // Letter macros.
             let word: String = b[i + 1..]
                 .iter()
                 .take_while(|c| c.is_ascii_alphabetic())
@@ -241,7 +239,6 @@ fn normalize_venue(s: &str) -> String {
     let mut k = 0;
     while k < words.len() {
         let w = words[k];
-        // "the 12th annual international conference on" and similar boilerplate.
         let ordinal = w.len() > 2
             && w[..w.len() - 2].chars().all(|c| c.is_ascii_digit())
             && ["st", "nd", "rd", "th"].contains(&&w[w.len() - 2..]);

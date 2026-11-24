@@ -87,7 +87,7 @@ pub fn find_fuzzy(text: &str, quote: &str) -> Option<(usize, usize)> {
     }
     let hay: Vec<char> = nt.chars().collect();
     let target = bigrams(&needle);
-    let mut best: Option<(f64, usize, usize)> = None; // (score, start char, len chars)
+    let mut best: Option<(f64, usize, usize)> = None;
     let consider = |start: usize, len: usize, best: &mut Option<(f64, usize, usize)>| {
         if start + len <= hay.len() && len >= 2 {
             let score = dice(&target, &hay[start..start + len]);
@@ -109,7 +109,6 @@ pub fn find_fuzzy(text: &str, quote: &str) -> Option<(usize, usize)> {
     if score < FUZZY_THRESHOLD - 0.1 {
         return None;
     }
-    // Refine around the best window.
     let mut refined = Some((score, start, len));
     for s in start.saturating_sub(step)..=(start + step).min(hay.len()) {
         for l in len.saturating_sub(step)..=len + step {
@@ -120,7 +119,6 @@ pub fn find_fuzzy(text: &str, quote: &str) -> Option<(usize, usize)> {
     if score < FUZZY_THRESHOLD {
         return None;
     }
-    // Char offsets in the normalised text -> byte offsets in it -> source byte range.
     let byte = |ci: usize| {
         nt.char_indices()
             .nth(ci)
@@ -187,7 +185,7 @@ const UNSAFE_ENVS: &[&str] = &[
 
 /// Token positions of environment boundaries in `text` (outside comments), including `\[`/`\]`.
 fn env_events(text: &str) -> Vec<(usize, usize, bool, String)> {
-    let mut ev = Vec::new(); // (start, end, is_begin, name)
+    let mut ev = Vec::new();
     let mut offset = 0;
     for line in text.split_inclusive('\n') {
         let code = code_part(line);
@@ -288,7 +286,7 @@ pub fn insertion_point(text: &str, end: usize) -> Option<usize> {
         None => le,
     };
 
-    // Leave unsafe environments: find the outermost open one and jump past its \end.
+    // keep: Leave unsafe environments: find the outermost open one and jump past its \end.
     let events = env_events(text);
     let mut stack: Vec<(usize, &str)> = Vec::new();
     for (s, e, begin, name) in &events {

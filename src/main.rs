@@ -52,7 +52,6 @@ async fn main() -> anyhow::Result<()> {
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("lightleaf=info,tower_http=warn"));
-    // LIGHTLEAF_LOG_FORMAT=json emits one JSON object per line, for log aggregators.
     if std::env::var("LIGHTLEAF_LOG_FORMAT").is_ok_and(|v| v.eq_ignore_ascii_case("json")) {
         tracing_subscriber::fmt()
             .json()
@@ -66,7 +65,6 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(cfg.projects_dir())?;
     std::fs::create_dir_all(cfg.build_dir())?;
     let db_path = cfg.data_dir.join("lightleaf.db");
-    // The CLI needs one connection; the server a few, so reads run in parallel.
     let pool = if command.is_some_and(|c| c != "serve") {
         1
     } else {
@@ -83,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         return cli::run(&state, &args).await;
     }
 
-    // Loaded only when serving, so a CLI run as another user never creates a key file the server
+    // keep: Loaded only when serving, so a CLI run as another user never creates a key file the server
     // cannot read.
     let secrets = secrets::SecretBox::load(&cfg.data_dir, config::secret_key().as_deref())?;
     let _ = state.secrets.set(secrets);
@@ -94,7 +92,6 @@ async fn main() -> anyhow::Result<()> {
 
     assets::warm();
 
-    // Background flusher: persists dirty collaborative docs to disk and evicts idle ones.
     collab::spawn_flusher(state.clone());
 
     let api = Router::new()
@@ -181,7 +178,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/projects/{id}/remote/push", post(remote::remote_push))
         .route("/projects/{id}/remote/sync", post(remote::remote_sync))
         .route("/projects/{id}/ws", get(collab::ws_handler))
-        // Optional AI review (src/reviewer.rs): 404 when not configured, 503 when unreachable.
         .route(
             "/projects/{id}/review",
             get(reviewer::latest).post(reviewer::start),
@@ -196,7 +192,6 @@ async fn main() -> anyhow::Result<()> {
         .layer(DefaultBodyLimit::max(cfg.max_upload_bytes))
         .layer(middleware::from_fn(security::csrf_guard));
 
-    // Git smart-HTTP endpoints, compatible with `git clone http://host/git/<project-id>`.
     let git_routes = Router::new()
         .route("/{id}/info/refs", get(git::info_refs))
         .route("/{id}/git-upload-pack", post(git::upload_pack))
@@ -208,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/git", git_routes)
         .route("/metrics", get(metrics::handler))
         .fallback(assets::static_handler)
-        // Only compress what benefits: PDFs, zips, images and git packs are already compressed,
+        // keep: Only compress what benefits: PDFs, zips, images and git packs are already compressed,
         // and recompressing them on every download would be the biggest CPU cost after TeX.
         .layer(
             CompressionLayer::new().compress_when(

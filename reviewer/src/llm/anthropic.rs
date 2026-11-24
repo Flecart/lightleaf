@@ -22,7 +22,7 @@ pub struct Anthropic {
 
 impl Anthropic {
     fn body(&self, r: &Request) -> Value {
-        // The shared document (if any) is its own cached block, before the task.
+        // keep: The shared document (if any) is its own cached block, before the task.
         let mut content = Vec::new();
         if !r.document.is_empty() {
             content.push(json!({ "type": "text", "text": r.document, "cache_control": { "type": "ephemeral" } }));
@@ -80,7 +80,7 @@ impl Provider for Anthropic {
             Some("max_tokens") => bail!("the model's answer was cut off (max_tokens reached)"),
             _ => {}
         }
-        // The answer is the last text block; thinking blocks may precede it.
+        // keep: The answer is the last text block; thinking blocks may precede it.
         let text = v["content"]
             .as_array()
             .and_then(|blocks| blocks.iter().rev().find(|b| b["type"] == "text"))

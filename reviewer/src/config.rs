@@ -90,7 +90,6 @@ impl Config {
             Some(p) => anyhow::bail!(
                 "LIGHTLEAF_REVIEW_PROVIDER must be \"anthropic\" or \"openai\", not {p:?}"
             ),
-            // Without an explicit choice, use whichever provider has credentials.
             None if anthropic_api_key.is_none()
                 && (openai_api_key.is_some() || openai_base.is_some()) =>
             {
@@ -141,7 +140,7 @@ impl Config {
             s2: {
                 let api_key =
                     env("LIGHTLEAF_S2_API_KEY").or_else(|| env("SEMANTIC_SCHOLAR_API_KEY"));
-                // Without a key, requests share Semantic Scholar's public pool: go slower.
+                // keep: Without a key, requests share Semantic Scholar's public pool: go slower.
                 let default_interval = if api_key.is_some() { 1100 } else { 3500 };
                 crate::references::s2::Settings {
                     base_url: env("LIGHTLEAF_S2_BASE_URL")

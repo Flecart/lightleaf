@@ -29,10 +29,9 @@ pub fn sections(merged: &str) -> Vec<Section> {
             let mut search = 0;
             while let Some(i) = code[search..].find(cmd) {
                 let at = search + i;
-                // Read from the whole text: titles may continue on the next line.
+                // keep: Read from the whole text: titles may continue on the next line.
                 let mut rest = &merged[offset + at + cmd.len()..];
                 search = at + cmd.len();
-                // Skip \sectionmark, \section@… and friends.
                 if rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '@') {
                     continue;
                 }

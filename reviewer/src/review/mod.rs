@@ -179,7 +179,7 @@ fn anchor(doc: &Document, r: &dyn Reviewer, f: Finding) -> Option<Comment> {
         agent: r.name().to_string(),
         severity: f.severity,
         text,
-        // The text actually found, so later re-anchoring finds it again.
+        // keep: The text actually found, so later re-anchoring finds it again.
         quote: file.text[range.0..range.1].to_string(),
         file: file.path.clone(),
         range,

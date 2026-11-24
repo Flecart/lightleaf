@@ -381,7 +381,7 @@ fn check_ip(state: &AppState, ip: &str) -> AppResult<()> {
 /// Whether a web registration is allowed right now, and if not, why.
 fn signup_policy(state: &AppState, users: i64, local: bool) -> Result<(), &'static str> {
     if users == 0 {
-        // The first account becomes the administrator: only allow claiming it from the server.
+        // keep: The first account becomes the administrator: only allow claiming it from the server.
         return if local {
             Ok(())
         } else {
@@ -444,7 +444,7 @@ pub async fn register(
     let peer = crate::security::peer(&ci);
     let ip = crate::security::client_ip(state.cfg.trust_proxy, Some(peer), &headers);
     check_ip(&state, &ip)?;
-    // Every registration attempt counts, so one client cannot mass-create accounts.
+    // keep: Every registration attempt counts, so one client cannot mass-create accounts.
     state.limits.auth_per_ip.hit(&ip);
     let local = crate::security::is_local_request(Some(peer), &headers);
     let users = user_count(&state).await?;
@@ -499,7 +499,6 @@ pub async fn login(
         && let Some(id) = id
     {
         if legacy {
-            // Upgrade an imported bcrypt hash to Argon2 now that we know the password.
             match hash_password(&state, req.password).await {
                 Ok(new_hash) => {
                     let _ = state

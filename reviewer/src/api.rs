@@ -117,7 +117,7 @@ async fn create_job(State(app): State<Shared>, Json(req): Json<JobRequest>) -> R
             let (app3, id3) = (app2.clone(), id.clone());
             Box::new(move |stage: String| app3.jobs.set_stage(&id3, stage))
         };
-        // Run in its own task so that even a panic only fails this job.
+        // keep: Run in its own task so that even a panic only fails this job.
         let outcome = match tokio::spawn(jobs::run(ctx, kind, req, id.clone(), progress)).await {
             Ok(r) => r,
             Err(e) => Err(anyhow::anyhow!("internal error: {e}")),

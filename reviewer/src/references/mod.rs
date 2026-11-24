@@ -124,7 +124,7 @@ pub async fn check(
             });
         }
     }
-    // Only cited entries are verified, in citation order, up to the cap. Web pages and software
+    // keep: Only cited entries are verified, in citation order, up to the cap. Web pages and software
     // are not in Semantic Scholar, so without a DOI they are not looked up.
     let mut todo: Vec<&bib::Entry> = cited
         .keys()

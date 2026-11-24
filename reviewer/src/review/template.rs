@@ -61,10 +61,10 @@ mod tests {
             render("Hi {{name}}, {{name}}!", &[("name", "Ada")]),
             "Hi Ada, Ada!"
         );
-        // Values are not re-scanned, and unknown placeholders stay.
+        // keep: Values are not re-scanned, and unknown placeholders stay.
         assert_eq!(render("{{a}} {{b}}", &[("a", "{{b}}")]), "{{b}} {{b}}");
         assert_eq!(unresolved("a {{x}} b {{y_1}} {{ not }} {{"), ["x", "y_1"]);
-        // BibTeX-like double braces are not placeholders.
+        // keep: BibTeX-like double braces are not placeholders.
         assert!(unresolved("title={{PaperMentor}: x}").is_empty());
     }
 }

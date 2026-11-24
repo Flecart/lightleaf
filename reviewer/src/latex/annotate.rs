@@ -51,7 +51,7 @@ pub fn apply(
             continue;
         }
         applied.written += inserts.len();
-        // Insert from the end so earlier offsets stay valid (stable for equal points).
+        // keep: Insert from the end so earlier offsets stay valid (stable for equal points).
         inserts.sort_by_key(|(p, _)| *p);
         let mut out = text;
         for (p, m) in inserts.into_iter().rev() {

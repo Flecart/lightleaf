@@ -135,10 +135,6 @@ pub(crate) async fn commit_pending(
     Ok(commit_all(&state.cfg.project_dir(id), room.as_ref(), message, actor).await?)
 }
 
-// ---------------------------------------------------------------------------------------------
-// Smart HTTP
-// ---------------------------------------------------------------------------------------------
-
 fn need_auth() -> Response {
     (
         StatusCode::UNAUTHORIZED,
@@ -157,7 +153,7 @@ async fn git_auth(
 ) -> Result<User, Response> {
     let user = match user_from_basic(state, headers).await {
         Ok(Some(t)) if t.project.as_deref().is_none_or(|p| p == id) => t.user,
-        // A project-scoped token used for another project: behave as if it did not exist.
+        // keep: A project-scoped token used for another project: behave as if it did not exist.
         Ok(Some(_)) | Ok(None) => return Err(need_auth()),
         Err(e) => return Err(e.into_response()),
     };
@@ -213,7 +209,6 @@ pub async fn info_refs(
     if let Err(r) = git_auth(&state, &headers, &id, min).await {
         return r;
     }
-    // Make sure the latest web edits are visible to the git client.
     {
         let lock = state.project_lock(&id);
         let _g = lock.lock().await;
@@ -299,7 +294,6 @@ pub async fn upload_pack(
         let _ = stdin.write_all(&input).await;
     });
     let stdout = child.stdout.take().unwrap();
-    // Reap the child once the stream is done.
     tokio::spawn(async move {
         let _ = child.wait().await;
     });
@@ -329,7 +323,7 @@ pub async fn receive_pack(
     };
     let lock = state.project_lock(&id);
     let _g = lock.lock().await;
-    // The working tree must be clean for `updateInstead` to accept the push.
+    // keep: The working tree must be clean for `updateInstead` to accept the push.
     if let Err(e) = commit_pending(&state, &id, "Update from web editor", None).await {
         return e.into_response();
     }
@@ -369,10 +363,6 @@ pub async fn receive_pack(
     )
         .into_response()
 }
-
-// ---------------------------------------------------------------------------------------------
-// History API
-// ---------------------------------------------------------------------------------------------
 
 fn valid_sha(s: &str) -> AppResult<()> {
     if (4..=40).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit()) {

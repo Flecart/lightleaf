@@ -177,7 +177,7 @@ mod tests {
             ]
         );
         assert_eq!(s[0].content, "We do X.");
-        // A \section holds only its text before the first \subsection; \subsubsection stays in its parent.
+        // keep: A \section holds only its text before the first \subsection; \subsubsection stays in its parent.
         assert_eq!(s[1].content, "\\section{Introduction}\nIntro.\n");
         assert!(s[2].content.contains("Detail") && s[2].content.contains("D."));
     }

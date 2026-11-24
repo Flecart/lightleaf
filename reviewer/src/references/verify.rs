@@ -240,7 +240,7 @@ pub fn verify(
             }
             return from_record(e, p);
         }
-        _ => {} // no DOI, unavailable, or a record without a title: fall through
+        _ => {}
     }
     if title.is_empty() {
         return Verdict::NoTitle;
@@ -321,7 +321,6 @@ mod tests {
             ),
             Verdict::Verified
         );
-        // Plausible (0.70-0.85) and consistent -> unverified.
         assert_eq!(
             verify(
                 &e,
@@ -374,7 +373,6 @@ mod tests {
             ),
             Verdict::DoiMismatch { .. }
         ));
-        // The prefixed DOI equals the record's DOI after normalisation.
         assert_eq!(
             verify(
                 &e,

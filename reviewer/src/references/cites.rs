@@ -38,7 +38,6 @@ pub fn citations(doc: &Document) -> BTreeMap<String, Citation> {
                 if name.is_empty() || !is_cite_command(name) {
                     continue;
                 }
-                // Optional arguments, then one or more {keys} groups (biblatex \cites).
                 let mut k = j;
                 let mut end = j;
                 let mut keys = Vec::new();
