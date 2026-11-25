@@ -91,6 +91,7 @@ src/files.rs     file tree, upload (quota), sandboxed file serving
 src/projects.rs  projects, members, chat, zip import (quota), copy
 src/git.rs       smart-HTTP git, history, external remotes
 src/metrics.rs   Prometheus /metrics
+src/prefs.rs     per-user preferences (Latex Suite snippet settings), opaque JSON per key
 src/reviewer.rs  optional proxy to the AI reviewer (only coupling point)
 src/assets.rs    embedded, pre-compressed frontend + CSP
 tools/loadtest/  1000-user WebSocket + HTTP load test (see its README)

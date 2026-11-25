@@ -12,6 +12,7 @@ mod files;
 mod git;
 mod metrics;
 mod overleaf;
+mod prefs;
 mod projects;
 mod remote;
 mod reviewer;
@@ -112,6 +113,10 @@ async fn main() -> anyhow::Result<()> {
             get(auth::list_tokens).post(auth::create_token),
         )
         .route("/me/tokens/{id}", delete(auth::delete_token))
+        .route(
+            "/me/latex-suite",
+            get(prefs::get_latex_suite).put(prefs::put_latex_suite),
+        )
         .route(
             "/me/sessions",
             get(auth::list_sessions).delete(auth::delete_other_sessions),

@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS remote_credentials (
     set_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
     updated_at INTEGER NOT NULL
 );
+-- Per-user preferences (prefs.rs), one opaque JSON object per key.
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
 CREATE INDEX IF NOT EXISTS chat_project ON chat(project_id, id);
 CREATE INDEX IF NOT EXISTS members_user ON members(user_id);
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
