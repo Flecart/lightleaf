@@ -39,6 +39,7 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
   has a `\documentclass`. Chapters, libraries and other files fall back to the main document.
 - **AI edit markup** — `\AIadd[tag]{…}`, `\AIdel[tag]{…}`, `\AIdelmoved[tag]{where}{…}` and `\AInote[tag]{…}` are
   highlighted in the editor with ✓/✗ buttons to accept or reject each one, plus *Accept all* / *Reject all*.
+- **LaTeX snippets** — a port of the Obsidian [Latex Suite](https://github.com/artisticat1/obsidian-latex-suite) plugin for `.tex` files: auto-expanding snippets (`@a` → `\alpha`, `//` → `\frac{}{}`, `a1` → `a_{1}`, …) with tabstops, autofraction (`x/` → `\frac{x}{}`), Tab to leave brackets and math, `&` / `\\` shortcuts in matrix and `align` environments, and auto-sized brackets. Math is detected from `$…$`, `$$…$$`, `\(…\)`, `\[…\]` and the display environments, so snippets stay out of text, comments, verbatim and `\label{…}`-style arguments. Snippets are edited in **Account settings** in Latex Suite's own syntax, and an Obsidian `data.json` can be imported or exported as is (function replacements are not supported; conceal, math preview and vim mode are not ported).
 - **Auto-compile**, LaTeX autocomplete (commands, environments, `\ref` labels, `\cite` keys from your `.bib` files), file outline, browser spell-check.
 - **Git integration**
   - every project *is* a git repository: `git clone http://your-host/git/<project-id>`
@@ -301,6 +302,7 @@ server.
 - Sessions expire after `LIGHTLEAF_SESSION_DAYS`, or earlier after `LIGHTLEAF_SESSION_IDLE_DAYS` without use. Users can see and revoke their sessions in **Account settings**. Changing or resetting a password logs out every other session.
 - State-changing API requests from other sites are rejected (`Origin` / `Sec-Fetch-Site` checks on top of `SameSite=Lax` cookies). The app is served with a strict Content-Security-Policy, `X-Frame-Options`, `nosniff` and, over HTTPS, HSTS.
 - Uploaded files are served sandboxed (`CSP: sandbox`), and HTML/XML/JS uploads are served as plain text, so a collaborator cannot run scripts in your session by uploading a malicious file.
+- Snippet settings are stored per account as opaque JSON (at most 256 KiB). The browser parses the snippet file as data and never evaluates it, so a snippet file cannot run code, and there is no `unsafe-eval` in the CSP.
 - Repositories check out symlinks as plain files (`core.symlinks=false`), and git hooks are disabled.
 - External remotes are limited to `http(s)://`, and a token is only ever sent over `https://`. Remote tokens (e.g. an Overleaf git token) are never written into the project (where a compiled document could read them): they are stored in the database encrypted with ChaCha20-Poly1305 under `LIGHTLEAF_SECRET_KEY` (or `secret.key`), bound to their project, never returned by the API, and dropped when the remote's host changes. Git gets them through an environment-only credential helper that answers only for that host, with the server user's own credential helpers disabled, and git output is redacted before it is shown or logged. Only the owner can set a remote; editors can sync with it, using the owner's token for that one remote. A URL pasted with `user:token@` is split and the token moved to encrypted storage, including remotes saved by older versions.
 
@@ -317,6 +319,8 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 Lightleaf is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, modify
 and self-host it freely. If you run a modified version as a network service, you must offer its source code to your
 users (set `LIGHTLEAF_SOURCE_URL` to point at it).
+
+The LaTeX snippet engine follows Latex Suite (MIT); see [its notice](frontend/src/editor/latexSuite/NOTICE.md).
 
 For licensing under other terms (for example, to embed Lightleaf in a proprietary product without the AGPL's
 obligations), contact the maintainer.
