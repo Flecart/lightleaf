@@ -391,3 +391,16 @@ body.dragging iframe, body.dragging .pdf-scroll { pointer-events: none; }
 .review-meta { font-size: 12px; margin-bottom: 2px; }
 .review-meta .badge { margin-left: 0; margin-right: 4px; }
 .review-quote { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Latex Suite settings card */
+.latex-suite .ls-toggles { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px 16px; margin: 12px 0; }
+.latex-suite .ls-label { display: block; font-weight: 500; font-size: 13px; margin: 12px 0 4px; }
+.latex-suite .ls-source { width: 100%; font-family: var(--mono); font-size: 12.5px; line-height: 1.45; resize: vertical; white-space: pre; tab-size: 4; }
+.latex-suite .ls-advanced { margin: 12px 0; }
+.latex-suite .ls-advanced summary { cursor: pointer; font-weight: 500; font-size: 13px; }
+.latex-suite .ls-grid { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 8px 10px; align-items: center; margin-top: 10px; }
+.latex-suite .ls-grid label { font-size: 13px; color: var(--muted); }
+.latex-suite .ls-grid input { font-family: var(--mono); }
+.latex-suite .ls-warnings { margin: 6px 0 0; padding-left: 18px; }
+.latex-suite .btn.danger { color: var(--danger); }
+@media (max-width: 600px) { .latex-suite .ls-grid { grid-template-columns: 1fr; } }

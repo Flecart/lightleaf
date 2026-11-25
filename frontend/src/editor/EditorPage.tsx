@@ -3,6 +3,8 @@ import { api, CompileResult, del, Entry, get, patch, post, Project, User } from 
 import { Avatar, Icon, Logo, Modal, Spinner, toast } from '../ui';
 import { DocBinding, PresenceUser, ProjectSocket } from './socket';
 import { CodeEditor, EditorHandle } from './CodeEditor';
+import { loadLatexSuite } from './latexSuite/load';
+import { CompiledConfig } from './latexSuite/config';
 import { PdfHighlight, PdfViewer, PdfViewHandle } from './PdfViewer';
 
 const SYNC_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘⌥J' : 'Ctrl+Alt+J';
@@ -69,6 +71,10 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
   const [autoCompile, setAutoCompile] = usePref('ll-autocompile', true);
   const [editorDark, setEditorDark] = usePref('ll-editor-dark', document.documentElement.dataset.theme === 'dark');
   const [fontSize, setFontSize] = usePref('ll-font', 14);
+  const [suite, setSuite] = useState<CompiledConfig | null>(null);
+  useEffect(() => {
+    loadLatexSuite().then(setSuite);
+  }, []);
   const [outlineOpen, setOutlineOpen] = usePref('ll-outline', true);
 
   const editorHandle = useRef<EditorHandle | null>(null);
@@ -524,6 +530,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                       dark={editorDark}
                       fontSize={fontSize}
                       refs={refs}
+                      latexSuite={suite}
                       issues={result?.issues ?? []}
                       onCompile={compile}
                       onSyncToPdf={syncToPdf}

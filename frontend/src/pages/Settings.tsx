@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { del, get, post, PublicConfig, timeAgo, User } from '../api';
 import { Icon, toast, TopBar } from '../ui';
 import { UserMenu } from './UserMenu';
+import { LatexSuiteCard } from './LatexSuiteSettings';
 
 interface Session {
   id: number;
@@ -124,6 +125,8 @@ export function SettingsPage(props: { user: User; config: PublicConfig; onLogout
             ))}
           </div>
         </section>
+
+        <LatexSuiteCard />
 
         <section class="card">
           <h2><Icon name="shield" /> Active sessions</h2>

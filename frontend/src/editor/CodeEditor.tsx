@@ -24,6 +24,8 @@ import { DocBinding } from './socket';
 import { languageFor, RefSource } from './lang';
 import { aiMarkup } from './aiMarkupExt';
 import { formatKeymap } from './formatting';
+import { latexSuite } from './latexSuite/extension';
+import { CompiledConfig } from './latexSuite/config';
 import { Issue } from '../api';
 
 export interface EditorHandle {
@@ -38,6 +40,8 @@ interface Props {
   dark: boolean;
   fontSize: number;
   refs: RefSource;
+  /** Latex Suite snippets and shortcuts for LaTeX files (null while loading). */
+  latexSuite: CompiledConfig | null;
   issues: Issue[];
   onCompile: () => void;
   /** Jump from the cursor to its place in the PDF (Mod-Alt-j). */
@@ -59,16 +63,20 @@ export function CodeEditor(props: Props) {
   const theme = useRef(new Compartment());
   const font = useRef(new Compartment());
   const ro = useRef(new Compartment());
+  const suite = useRef(new Compartment());
+  const undoRef = useRef<Y.UndoManager | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
 
   const fontTheme = (size: number) => EditorView.theme({ '&': { fontSize: `${size}px` }, '.cm-content': { fontFamily: 'var(--mono)' } });
+  const suiteExt = (path: string, cfg: CompiledConfig | null) => latexSuite(path, cfg, () => undoRef.current?.stopCapturing());
   const themeExt = (dark: boolean) => (dark ? oneDark : [lightTheme, syntaxHighlighting(defaultHighlightStyle, { fallback: true })]);
 
   const build = () => {
     const b = propsRef.current.binding;
     viewRef.current?.destroy();
     const undo = new Y.UndoManager(b.text);
+    undoRef.current = undo;
     const state = EditorState.create({
       doc: b.text.toString(),
       extensions: [
@@ -109,6 +117,7 @@ export function CodeEditor(props: Props) {
         theme.current.of(themeExt(propsRef.current.dark)),
         font.current.of(fontTheme(propsRef.current.fontSize)),
         ro.current.of(EditorState.readOnly.of(propsRef.current.readOnly)),
+        suite.current.of(suiteExt(b.path, propsRef.current.latexSuite)),
         EditorView.updateListener.of((u) => {
           if (u.selectionSet || u.docChanged) {
             const line = u.state.doc.lineAt(u.state.selection.main.head).number;
@@ -176,6 +185,9 @@ export function CodeEditor(props: Props) {
   useEffect(() => {
     viewRef.current?.dispatch({ effects: ro.current.reconfigure(EditorState.readOnly.of(props.readOnly)) });
   }, [props.readOnly]);
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: suite.current.reconfigure(suiteExt(props.binding.path, props.latexSuite)) });
+  }, [props.latexSuite]);
   useEffect(applyDiagnostics, [props.issues]);
 
   return <div class="code-editor" ref={host} />;
