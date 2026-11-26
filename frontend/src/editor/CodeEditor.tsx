@@ -25,6 +25,7 @@ import { languageFor, RefSource } from './lang';
 import { aiMarkup } from './aiMarkupExt';
 import { formatKeymap } from './formatting';
 import { latexSuite } from './latexSuite/extension';
+import { dropFigures, FigureHost } from './dropFigures';
 import { CompiledConfig } from './latexSuite/config';
 import { Issue } from '../api';
 
@@ -47,6 +48,8 @@ interface Props {
   /** Jump from the cursor to its place in the PDF (Mod-Alt-j). */
   onSyncToPdf?: () => void;
   onCursor?: (line: number) => void;
+  /** Uploads images dropped or pasted into the editor (absent: they are not handled). */
+  figures?: FigureHost;
   handle: { current: EditorHandle | null };
 }
 
@@ -113,6 +116,7 @@ export function CodeEditor(props: Props) {
         ]),
         ...languageFor(b.path, propsRef.current.refs),
         aiMarkup(b.path),
+        propsRef.current.figures ? dropFigures(b.path, b.text, propsRef.current.figures) : [],
         yCollab(b.text, b.awareness, { undoManager: undo }),
         theme.current.of(themeExt(propsRef.current.dark)),
         font.current.of(fontTheme(propsRef.current.fontSize)),

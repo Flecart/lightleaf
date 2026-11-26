@@ -3,6 +3,7 @@ import { api, CompileResult, del, Entry, get, patch, post, Project, User } from 
 import { Avatar, Icon, Logo, Modal, Spinner, toast } from '../ui';
 import { DocBinding, PresenceUser, ProjectSocket } from './socket';
 import { CodeEditor, EditorHandle } from './CodeEditor';
+import { FigureHost } from './dropFigures';
 import { loadLatexSuite } from './latexSuite/load';
 import { CompiledConfig } from './latexSuite/config';
 import { PdfHighlight, PdfViewer, PdfViewHandle } from './PdfViewer';
@@ -328,6 +329,36 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
     },
   };
 
+  const mainFileRef = useRef('');
+  mainFileRef.current = project?.mainFile ?? '';
+  const figures = useMemo<FigureHost>(() => ({
+    entries: () => entriesRef.current,
+    mainFile: () => mainFileRef.current,
+    upload: async (jobs) => {
+      const byDir = new Map<string, { file: File; name: string }[]>();
+      for (const { file, path } of jobs) {
+        const i = path.lastIndexOf('/');
+        const dir = i < 0 ? '' : path.slice(0, i);
+        byDir.set(dir, [...(byDir.get(dir) ?? []), { file, name: path.slice(i + 1) }]);
+      }
+      try {
+        const saved: string[] = [];
+        for (const [dir, files] of byDir) {
+          const fd = new FormData();
+          fd.append('folder', dir);
+          for (const f of files) fd.append('file', f.file, f.name);
+          const r = await api<{ saved: string[] }>('POST', `/api/projects/${pid}/upload`, fd);
+          saved.push(...r.saved);
+        }
+        loadTree();
+        return saved;
+      } catch (e: any) {
+        toast(e.message, 'error');
+        return null;
+      }
+    },
+  }), [pid]);
+
   // ---- synctex -------------------------------------------------------------------------------
   const jumpTo = (file: string | null, line: number) => {
     const target = file ?? result?.mainFile ?? project?.mainFile ?? null;
@@ -535,6 +566,7 @@ export function EditorPage(props: { projectId: string; user: User; reviewer?: bo
                       onCompile={compile}
                       onSyncToPdf={syncToPdf}
                       onCursor={setCursorLine}
+                      figures={figures}
                       handle={editorHandle}
                     />
                   ) : binding ? (
