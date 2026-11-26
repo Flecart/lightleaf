@@ -20,6 +20,10 @@ memory, and a small VPS or a Raspberry Pi is enough to run it.
 ## Features
 
 - **Overleaf-like UI** — file tree with drag & drop, CodeMirror 6 editor, PDF preview, resizable panes, editor/PDF/split layouts, light & dark themes.
+- **Drop figures into the editor** — drag an image or PDF onto a `.tex`/`.typ` file (or paste a screenshot) and it
+  is uploaded to the project's `figures/` folder (or next to the file) and included where you dropped it: a full
+  `figure` with caption and label on an empty line, a bare `\includegraphics`/`#image` inside text. Dragging an
+  image from the file tree inserts a reference without uploading.
 - **Real-time collaboration** — conflict-free editing with [Yjs](https://yjs.dev) CRDTs (server side: [`yrs`](https://github.com/y-crdt/y-crdt)), live cursors and selections, presence avatars, project chat.
 - **LaTeX** — [folio](https://github.com/flecart/folio), a LaTeX compiler written in Rust and the default for new
   projects. It writes SyncTeX for PDF ↔ source jumps (see SyncTeX below), also for documents it hands
